@@ -1,0 +1,5 @@
+# اختیاری: سرور HTTP
+-r requirements.txt
+fastapi
+uvicorn
+python-multipart

@@ -1,0 +1,2 @@
+# هستهٔ برنامه (CLI + Edge TTS)
+edge-tts>=6.1

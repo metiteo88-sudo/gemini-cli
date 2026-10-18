@@ -1,0 +1,1739 @@
+From c06ef85618d7d0b939eec49c46c960b5b5c059d2 Mon Sep 17 00:00:00 2001
+From: FarsiVoiceAI <farsivoice@users.noreply.github.com>
+Date: Sun, 18 Oct 2026 17:34:52 +0000
+Subject: [PATCH] Restructure: single farsivoice package (edge/piper/auto),
+ CLI, API, tests; remove duplicate & orphan scripts
+
+---
+ .github/workflows/python-package-conda.yml    |  34 ----
+ .github/workflows/tests.yml                   |  18 +++
+ .gitignore                                    |   2 +
+ README.md                                     |  91 +++++++++++
+ backend/audiobook_parts/sentences.txt         |   3 -
+ backend/book_to_voice.py                      |  93 -----------
+ backend/diacritizer_postprocess.py            |  26 ---
+ backend/edge_audiobook.py                     |  38 -----
+ backend/edge_audiobook_backup.py              |  38 -----
+ backend/edge_audiobook_backup2.py             |  38 -----
+ backend/edge_audiobook_before_natural.py      |  38 -----
+ backend/edge_audiobook_golden.py              |  38 -----
+ backend/edge_audiobook_natural_backup.py      |  38 -----
+ backend/edge_audiobook_paragraph_test.py      |  38 -----
+ backend/edge_audiobook_test.py                |  38 -----
+ backend/edge_book.py                          |  38 -----
+ backend/main.py                               |  38 -----
+ backend/piper_engine.py                       |  31 ----
+ backend/prosody.py                            |  25 ---
+ backend/test_clean.py                         |  26 ---
+ backend/test_diacritizer.py                   |  51 ------
+ backend/voice_pipeline.py                     |  20 ---
+ {backend => examples}/book.txt                |   0
+ farsivoice/__init__.py                        |   6 +
+ farsivoice/__main__.py                        |   5 +
+ farsivoice/api.py                             |  75 +++++++++
+ farsivoice/cli.py                             |  58 +++++++
+ farsivoice/config.py                          |  27 ++++
+ farsivoice/diacritics.py                      |  92 +++++++++++
+ farsivoice/engines.py                         | 150 ++++++++++++++++++
+ farsivoice/pipeline.py                        |  27 ++++
+ backend/text_cleaner.py => farsivoice/text.py |  46 ++----
+ pytest.ini                                    |   3 +
+ requirements-api.txt                          |   5 +
+ requirements-diacritizer.txt                  |   3 +
+ requirements.txt                              |   2 +
+ tests/test_diacritics.py                      |  13 ++
+ tests/test_pipeline.py                        |  53 +++++++
+ tests/test_text.py                            |  32 ++++
+ 39 files changed, 679 insertions(+), 718 deletions(-)
+ delete mode 100644 .github/workflows/python-package-conda.yml
+ create mode 100644 .github/workflows/tests.yml
+ create mode 100644 README.md
+ delete mode 100644 backend/audiobook_parts/sentences.txt
+ delete mode 100644 backend/book_to_voice.py
+ delete mode 100644 backend/diacritizer_postprocess.py
+ delete mode 100644 backend/edge_audiobook.py
+ delete mode 100644 backend/edge_audiobook_backup.py
+ delete mode 100644 backend/edge_audiobook_backup2.py
+ delete mode 100644 backend/edge_audiobook_before_natural.py
+ delete mode 100644 backend/edge_audiobook_golden.py
+ delete mode 100644 backend/edge_audiobook_natural_backup.py
+ delete mode 100644 backend/edge_audiobook_paragraph_test.py
+ delete mode 100644 backend/edge_audiobook_test.py
+ delete mode 100644 backend/edge_book.py
+ delete mode 100644 backend/main.py
+ delete mode 100644 backend/piper_engine.py
+ delete mode 100644 backend/prosody.py
+ delete mode 100644 backend/test_clean.py
+ delete mode 100644 backend/test_diacritizer.py
+ delete mode 100644 backend/voice_pipeline.py
+ rename {backend => examples}/book.txt (100%)
+ create mode 100644 farsivoice/__init__.py
+ create mode 100644 farsivoice/__main__.py
+ create mode 100644 farsivoice/api.py
+ create mode 100644 farsivoice/cli.py
+ create mode 100644 farsivoice/config.py
+ create mode 100644 farsivoice/diacritics.py
+ create mode 100644 farsivoice/engines.py
+ create mode 100644 farsivoice/pipeline.py
+ rename backend/text_cleaner.py => farsivoice/text.py (56%)
+ create mode 100644 pytest.ini
+ create mode 100644 requirements-api.txt
+ create mode 100644 requirements-diacritizer.txt
+ create mode 100644 requirements.txt
+ create mode 100644 tests/test_diacritics.py
+ create mode 100644 tests/test_pipeline.py
+ create mode 100644 tests/test_text.py
+
+diff --git a/.github/workflows/python-package-conda.yml b/.github/workflows/python-package-conda.yml
+deleted file mode 100644
+index f358604..0000000
+--- a/.github/workflows/python-package-conda.yml
++++ /dev/null
+@@ -1,34 +0,0 @@
+-name: Python Package using Conda
+-
+-on: [push]
+-
+-jobs:
+-  build-linux:
+-    runs-on: ubuntu-latest
+-    strategy:
+-      max-parallel: 5
+-
+-    steps:
+-    - uses: actions/checkout@v4
+-    - name: Set up Python 3.10
+-      uses: actions/setup-python@v3
+-      with:
+-        python-version: '3.10'
+-    - name: Add conda to system path
+-      run: |
+-        # $CONDA is an environment variable pointing to the root of the miniconda directory
+-        echo $CONDA/bin >> $GITHUB_PATH
+-    - name: Install dependencies
+-      run: |
+-        conda env update --file environment.yml --name base
+-    - name: Lint with flake8
+-      run: |
+-        conda install flake8
+-        # stop the build if there are Python syntax errors or undefined names
+-        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+-        # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
+-        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+-    - name: Test with pytest
+-      run: |
+-        conda install pytest
+-        pytest
+diff --git a/.github/workflows/tests.yml b/.github/workflows/tests.yml
+new file mode 100644
+index 0000000..9d31a22
+--- /dev/null
++++ b/.github/workflows/tests.yml
+@@ -0,0 +1,18 @@
++name: tests
++
++on: [push, pull_request]
++
++jobs:
++  test:
++    runs-on: ubuntu-latest
++    steps:
++      - uses: actions/checkout@v4
++      - uses: actions/setup-python@v5
++        with:
++          python-version: "3.11"
++      - name: Install
++        run: pip install -r requirements.txt pytest flake8
++      - name: Lint (syntax errors / undefined names only)
++        run: flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
++      - name: Test
++        run: pytest -q
+diff --git a/.gitignore b/.gitignore
+index 6b64067..fb79c07 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -4,6 +4,8 @@ __pycache__/
+ venv/
+ env/
+ .env
++.pytest_cache/
++output/
+ *.wav
+ *.mp3
+ *.ogg
+diff --git a/README.md b/README.md
+new file mode 100644
+index 0000000..03132a7
+--- /dev/null
++++ b/README.md
+@@ -0,0 +1,91 @@
++# FarsiVoiceAI 🎙️
++
++تبدیل فایل متنی فارسی به صدای طبیعی — روی ترموکس، اوبونتو و ویندوز/لینوکس.
++**بدون هیچ وابستگی به Gemini.**
++
++| موتور | نیاز به اینترنت | کیفیت | توضیح |
++|---|---|---|---|
++| `edge` (پیش‌فرض) | ✅ | عالی | صدای `fa-IR-FaridNeural`، سرعت `-11%`، زیروبمی `-8Hz` (همان تنظیمات طلایی قبلی) |
++| `piper` | ❌ آفلاین | خوب | مدل `fa_IR-gyro-medium`، جمله‌به‌جمله با ۰٫۶ ثانیه مکث |
++| `auto` | — | — | اول Edge؛ اگر قطع/مسدود بود خودکار Piper |
++
++## نصب (ترموکس یا اوبونتو)
++
++```bash
++pkg install python ffmpeg git        # در اوبونتو: apt install python3-pip ffmpeg git
++git clone https://github.com/mahditouri20-crypto/FarsiVoiceAI
++cd FarsiVoiceAI
++pip install -r requirements.txt
++
++# اختیاری — موتور آفلاین:
++pip install piper-tts
++python -m piper.download_voices fa_IR-gyro-medium
++```
++
++## استفاده
++
++```bash
++python -m farsivoice examples/book.txt                 # → examples/book.mp3
++python -m farsivoice book.txt -o kitab.mp3 --engine auto
++python -m farsivoice book.txt --engine piper --pause 0.8
++python -m farsivoice book.txt --rate -5% --pitch -4Hz
++python -m farsivoice --help
++```
++
++همهٔ تنظیمات در `farsivoice/config.py` هستند و با متغیر محیطی هم قابل تغییرند،
++مثلاً `FARSIVOICE_ENGINE=auto`.
++
++## سرور API (اختیاری)
++
++```bash
++pip install -r requirements-api.txt
++uvicorn farsivoice.api:app --host 0.0.0.0 --port 8000
++```
++
++| مسیر | کار |
++|---|---|
++| `POST /text` | `{"text": "...", "engine": "auto"}` → ساخت صدا |
++| `POST /file` | آپلود فایل متنی UTF-8 → ساخت صدا |
++| `GET /audio/{name}` | دانلود فایل صوتی ساخته‌شده |
++
++## اعراب‌گذاری خودکار (اختیاری، آزمایشی)
++
++```bash
++pip install -r requirements-diacritizer.txt     # حجیم (torch)
++python -m farsivoice book.txt --diacritize
++python -m farsivoice.diacritics                 # نمایش نمونه‌ها
++```
++
++## ساختار
++
++```
++farsivoice/
++  config.py      تنظیمات (یک‌جا)
++  text.py        پاک‌سازی متن، اعداد فارسی، تقسیم جمله
++  diacritics.py  اعراب‌گذاری + پس‌پردازش
++  engines.py     موتورهای edge / piper / auto
++  pipeline.py    متن → صدا
++  cli.py         خط فرمان
++  api.py         سرور HTTP
++tests/           تست‌ها (pytest)
++examples/        نمونهٔ ورودی
++```
++
++## نقشهٔ فایل‌های قدیمی → جدید
++
++| قدیمی (`backend/`) | وضعیت |
++|---|---|
++| `edge_audiobook.py` + ۸ کپی (`_golden`, `_backup`, `_backup2`, `_test`, `_before_natural`, `_natural_backup`, `_paragraph_test`, `edge_book.py`) | یکی شدند → `engines.EdgeEngine` (تفاوتشان فقط `RATE` و نام خروجی بود؛ حالا `--rate` و `-o`) |
++| `piper_engine.py` + `book_to_voice.py` | → `engines.PiperEngine` |
++| `text_cleaner.py` + `test_clean.py` (نسخهٔ قدیمی) | → `text.py` |
++| `test_diacritizer.py` + `diacritizer_postprocess.py` (هیچ‌جا وصل نبودند) | → `diacritics.py` و گزینهٔ `--diacritize` |
++| `main.py` | → `api.py` (به‌علاوهٔ دانلود فایل و آپلود متن) |
++| `prosody.py` + `voice_pipeline.py` | **حذف شدند** — تگ‌هایی مثل `<break_short>` می‌ساختند که هیچ موتوری نمی‌فهمد؛ مکث‌ها حالا در موتور Piper واقعاً اعمال می‌شوند |
++| `book.txt`, `audiobook_parts/` | → `examples/book.txt` |
++| `.github/workflows/python-package-conda.yml` | → `tests.yml` (قبلی به `environment.yml` ناموجود نیاز داشت و همیشه شکست می‌خورد) |
++
++## تست
++
++```bash
++pip install pytest && pytest -q
++```
+diff --git a/backend/audiobook_parts/sentences.txt b/backend/audiobook_parts/sentences.txt
+deleted file mode 100644
+index 758239c..0000000
+--- a/backend/audiobook_parts/sentences.txt
++++ /dev/null
+@@ -1,3 +0,0 @@
+-امروز ایران را از زاویه‌ای دیگر ببینیم.
+-حالا برویم سراغ داستان اصلی.
+-این فقط یک آزمایش کوچک برای آواگویاست.
+\ No newline at end of file
+diff --git a/backend/book_to_voice.py b/backend/book_to_voice.py
+deleted file mode 100644
+index a3b45bf..0000000
+--- a/backend/book_to_voice.py
++++ /dev/null
+@@ -1,93 +0,0 @@
+-import re
+-import os
+-import subprocess
+-import sys
+-
+-from piper_engine import generate_voice
+-
+-
+-def split_text(text):
+-    text = re.sub(r'\s+', ' ', text).strip()
+-
+-    sentences = re.split(r'(?<=[.!؟؛])\s+', text)
+-
+-    return [s.strip() for s in sentences if s.strip()]
+-
+-
+-def make_silence(filename, duration):
+-    subprocess.run([
+-        "ffmpeg", "-y",
+-        "-f", "lavfi",
+-        "-i", f"anullsrc=r=22050:cl=mono",
+-        "-t", str(duration),
+-        "-c:a", "pcm_s16le",
+-        filename
+-    ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+-
+-
+-def book_to_voice(input_file, output_file="book-output.wav"):
+-    with open(input_file, "r", encoding="utf-8") as f:
+-        text = f.read()
+-
+-    sentences = split_text(text)
+-
+-    print(f"تعداد جمله‌ها: {len(sentences)}")
+-
+-    files = []
+-
+-    for i, sentence in enumerate(sentences, 1):
+-        print(f"[{i}/{len(sentences)}] {sentence}")
+-
+-        voice_file = f".sentence_{i}.wav"
+-        silence_file = f".silence_{i}.wav"
+-
+-        generate_voice(sentence, voice_file)
+-
+-        if i < len(sentences):
+-            make_silence(silence_file, 0.6)
+-
+-        files.append(voice_file)
+-
+-        if i < len(sentences):
+-            files.append(silence_file)
+-
+-    list_file = ".concat_list.txt"
+-
+-    with open(list_file, "w", encoding="utf-8") as f:
+-        for filename in files:
+-            f.write(f"file '{os.path.abspath(filename)}'\n")
+-
+-    subprocess.run([
+-        "ffmpeg", "-y",
+-        "-f", "concat",
+-        "-safe", "0",
+-        "-i", list_file,
+-        "-c:a", "pcm_s16le",
+-        output_file
+-    ], check=True)
+-
+-    for filename in files:
+-        if os.path.exists(filename):
+-            os.remove(filename)
+-
+-    if os.path.exists(list_file):
+-        os.remove(list_file)
+-
+-    print()
+-    print(f"تمام شد: {output_file}")
+-
+-
+-if __name__ == "__main__":
+-    if len(sys.argv) < 2:
+-        print("استفاده:")
+-        print("python book_to_voice.py book.txt")
+-        sys.exit(1)
+-
+-    input_file = sys.argv[1]
+-
+-    output_file = "book-output.wav"
+-
+-    if len(sys.argv) >= 3:
+-        output_file = sys.argv[2]
+-
+-    book_to_voice(input_file, output_file)
+diff --git a/backend/diacritizer_postprocess.py b/backend/diacritizer_postprocess.py
+deleted file mode 100644
+index 07d2563..0000000
+--- a/backend/diacritizer_postprocess.py
++++ /dev/null
+@@ -1,26 +0,0 @@
+-import re
+-
+-
+-def postprocess_diacritics(text):
+-    """Clean CANINE Persian diacritization output for TTS."""
+-
+-    # حذف اعراب تکراری
+-    text = re.sub(r"([ًٌٍَُِّْ])\1+", r"\1", text)
+-
+-    # حذف ترکیب‌های متناقض
+-    text = text.replace("کُِ", "کِ")
+-    text = text.replace("کُِ", "کُ")
+-    text = text.replace("ُُ", "ُ")
+-    text = text.replace("ََ", "َ")
+-    text = text.replace("ِِ", "ِ")
+-
+-    # حذف سکون در انتهای کلمات
+-    text = re.sub(r"ْ(?=\s|[.!؟،,:؛]|$)", "", text)
+-
+-    # حذف سکون قبل از علائم نگارشی
+-    text = re.sub(r"ْ([.!؟،,:؛])", r"\1", text)
+-
+-    # حذف فاصله‌های اضافی
+-    text = re.sub(r"\s+", " ", text).strip()
+-
+-    return text
+diff --git a/backend/edge_audiobook.py b/backend/edge_audiobook.py
+deleted file mode 100644
+index ec65bbc..0000000
+--- a/backend/edge_audiobook.py
++++ /dev/null
+@@ -1,38 +0,0 @@
+-import asyncio
+-import edge_tts
+-import os
+-
+-VOICE = "fa-IR-FaridNeural"
+-RATE = "-11%"
+-PITCH = "-8Hz"
+-
+-INPUT_FILE = "book.txt"
+-OUTPUT_FILE = "audiobook_final.mp3"
+-
+-async def main():
+-    if not os.path.exists(INPUT_FILE):
+-        print("❌ book.txt پیدا نشد")
+-        return
+-
+-    with open(INPUT_FILE, "r", encoding="utf-8") as f:
+-        text = f.read().strip()
+-
+-    if not text:
+-        print("❌ book.txt خالی است")
+-        return
+-
+-    print("🎙️ در حال ساخت کتاب صوتی...")
+-    
+-    communicate = edge_tts.Communicate(
+-        text,
+-        voice=VOICE,
+-        rate=RATE,
+-        pitch=PITCH
+-    )
+-
+-    await communicate.save(OUTPUT_FILE)
+-
+-    print(f"✅ تمام شد: {OUTPUT_FILE}")
+-
+-if __name__ == "__main__":
+-    asyncio.run(main())
+diff --git a/backend/edge_audiobook_backup.py b/backend/edge_audiobook_backup.py
+deleted file mode 100644
+index 832948c..0000000
+--- a/backend/edge_audiobook_backup.py
++++ /dev/null
+@@ -1,38 +0,0 @@
+-import asyncio
+-import edge_tts
+-import os
+-
+-VOICE = "fa-IR-FaridNeural"
+-RATE = "-10%"
+-PITCH = "-8Hz"
+-
+-INPUT_FILE = "book.txt"
+-OUTPUT_FILE = "audiobook.mp3"
+-
+-async def main():
+-    if not os.path.exists(INPUT_FILE):
+-        print("❌ book.txt پیدا نشد")
+-        return
+-
+-    with open(INPUT_FILE, "r", encoding="utf-8") as f:
+-        text = f.read().strip()
+-
+-    if not text:
+-        print("❌ book.txt خالی است")
+-        return
+-
+-    print("🎙️ در حال ساخت کتاب صوتی...")
+-    
+-    communicate = edge_tts.Communicate(
+-        text,
+-        voice=VOICE,
+-        rate=RATE,
+-        pitch=PITCH
+-    )
+-
+-    await communicate.save(OUTPUT_FILE)
+-
+-    print(f"✅ تمام شد: {OUTPUT_FILE}")
+-
+-if __name__ == "__main__":
+-    asyncio.run(main())
+diff --git a/backend/edge_audiobook_backup2.py b/backend/edge_audiobook_backup2.py
+deleted file mode 100644
+index 14d0d69..0000000
+--- a/backend/edge_audiobook_backup2.py
++++ /dev/null
+@@ -1,38 +0,0 @@
+-import asyncio
+-import edge_tts
+-import os
+-
+-VOICE = "fa-IR-FaridNeural"
+-RATE = "-10%"
+-PITCH = "-8Hz"
+-
+-INPUT_FILE = "book.txt"
+-OUTPUT_FILE = "audiobook_pro.mp3"
+-
+-async def main():
+-    if not os.path.exists(INPUT_FILE):
+-        print("❌ book.txt پیدا نشد")
+-        return
+-
+-    with open(INPUT_FILE, "r", encoding="utf-8") as f:
+-        text = f.read().strip()
+-
+-    if not text:
+-        print("❌ book.txt خالی است")
+-        return
+-
+-    print("🎙️ در حال ساخت کتاب صوتی...")
+-    
+-    communicate = edge_tts.Communicate(
+-        text,
+-        voice=VOICE,
+-        rate=RATE,
+-        pitch=PITCH
+-    )
+-
+-    await communicate.save(OUTPUT_FILE)
+-
+-    print(f"✅ تمام شد: {OUTPUT_FILE}")
+-
+-if __name__ == "__main__":
+-    asyncio.run(main())
+diff --git a/backend/edge_audiobook_before_natural.py b/backend/edge_audiobook_before_natural.py
+deleted file mode 100644
+index 1dc6aa3..0000000
+--- a/backend/edge_audiobook_before_natural.py
++++ /dev/null
+@@ -1,38 +0,0 @@
+-import asyncio
+-import edge_tts
+-import os
+-
+-VOICE = "fa-IR-FaridNeural"
+-RATE = "-10%"
+-PITCH = "-8Hz"
+-
+-INPUT_FILE = "book.txt"
+-OUTPUT_FILE = "audiobook_final.mp3"
+-
+-async def main():
+-    if not os.path.exists(INPUT_FILE):
+-        print("❌ book.txt پیدا نشد")
+-        return
+-
+-    with open(INPUT_FILE, "r", encoding="utf-8") as f:
+-        text = f.read().strip()
+-
+-    if not text:
+-        print("❌ book.txt خالی است")
+-        return
+-
+-    print("🎙️ در حال ساخت کتاب صوتی...")
+-    
+-    communicate = edge_tts.Communicate(
+-        text,
+-        voice=VOICE,
+-        rate=RATE,
+-        pitch=PITCH
+-    )
+-
+-    await communicate.save(OUTPUT_FILE)
+-
+-    print(f"✅ تمام شد: {OUTPUT_FILE}")
+-
+-if __name__ == "__main__":
+-    asyncio.run(main())
+diff --git a/backend/edge_audiobook_golden.py b/backend/edge_audiobook_golden.py
+deleted file mode 100644
+index ec65bbc..0000000
+--- a/backend/edge_audiobook_golden.py
++++ /dev/null
+@@ -1,38 +0,0 @@
+-import asyncio
+-import edge_tts
+-import os
+-
+-VOICE = "fa-IR-FaridNeural"
+-RATE = "-11%"
+-PITCH = "-8Hz"
+-
+-INPUT_FILE = "book.txt"
+-OUTPUT_FILE = "audiobook_final.mp3"
+-
+-async def main():
+-    if not os.path.exists(INPUT_FILE):
+-        print("❌ book.txt پیدا نشد")
+-        return
+-
+-    with open(INPUT_FILE, "r", encoding="utf-8") as f:
+-        text = f.read().strip()
+-
+-    if not text:
+-        print("❌ book.txt خالی است")
+-        return
+-
+-    print("🎙️ در حال ساخت کتاب صوتی...")
+-    
+-    communicate = edge_tts.Communicate(
+-        text,
+-        voice=VOICE,
+-        rate=RATE,
+-        pitch=PITCH
+-    )
+-
+-    await communicate.save(OUTPUT_FILE)
+-
+-    print(f"✅ تمام شد: {OUTPUT_FILE}")
+-
+-if __name__ == "__main__":
+-    asyncio.run(main())
+diff --git a/backend/edge_audiobook_natural_backup.py b/backend/edge_audiobook_natural_backup.py
+deleted file mode 100644
+index 1dc6aa3..0000000
+--- a/backend/edge_audiobook_natural_backup.py
++++ /dev/null
+@@ -1,38 +0,0 @@
+-import asyncio
+-import edge_tts
+-import os
+-
+-VOICE = "fa-IR-FaridNeural"
+-RATE = "-10%"
+-PITCH = "-8Hz"
+-
+-INPUT_FILE = "book.txt"
+-OUTPUT_FILE = "audiobook_final.mp3"
+-
+-async def main():
+-    if not os.path.exists(INPUT_FILE):
+-        print("❌ book.txt پیدا نشد")
+-        return
+-
+-    with open(INPUT_FILE, "r", encoding="utf-8") as f:
+-        text = f.read().strip()
+-
+-    if not text:
+-        print("❌ book.txt خالی است")
+-        return
+-
+-    print("🎙️ در حال ساخت کتاب صوتی...")
+-    
+-    communicate = edge_tts.Communicate(
+-        text,
+-        voice=VOICE,
+-        rate=RATE,
+-        pitch=PITCH
+-    )
+-
+-    await communicate.save(OUTPUT_FILE)
+-
+-    print(f"✅ تمام شد: {OUTPUT_FILE}")
+-
+-if __name__ == "__main__":
+-    asyncio.run(main())
+diff --git a/backend/edge_audiobook_paragraph_test.py b/backend/edge_audiobook_paragraph_test.py
+deleted file mode 100644
+index 67a5f69..0000000
+--- a/backend/edge_audiobook_paragraph_test.py
++++ /dev/null
+@@ -1,38 +0,0 @@
+-import asyncio
+-import edge_tts
+-import os
+-
+-VOICE = "fa-IR-FaridNeural"
+-RATE = "-11%"
+-PITCH = "-8Hz"
+-
+-INPUT_FILE = "book.txt"
+-OUTPUT_FILE = "paragraph_test.mp3"
+-
+-async def main():
+-    if not os.path.exists(INPUT_FILE):
+-        print("❌ book.txt پیدا نشد")
+-        return
+-
+-    with open(INPUT_FILE, "r", encoding="utf-8") as f:
+-        text = f.read().strip()
+-
+-    if not text:
+-        print("❌ book.txt خالی است")
+-        return
+-
+-    print("🎙️ در حال ساخت کتاب صوتی...")
+-    
+-    communicate = edge_tts.Communicate(
+-        text,
+-        voice=VOICE,
+-        rate=RATE,
+-        pitch=PITCH
+-    )
+-
+-    await communicate.save(OUTPUT_FILE)
+-
+-    print(f"✅ تمام شد: {OUTPUT_FILE}")
+-
+-if __name__ == "__main__":
+-    asyncio.run(main())
+diff --git a/backend/edge_audiobook_test.py b/backend/edge_audiobook_test.py
+deleted file mode 100644
+index ec65bbc..0000000
+--- a/backend/edge_audiobook_test.py
++++ /dev/null
+@@ -1,38 +0,0 @@
+-import asyncio
+-import edge_tts
+-import os
+-
+-VOICE = "fa-IR-FaridNeural"
+-RATE = "-11%"
+-PITCH = "-8Hz"
+-
+-INPUT_FILE = "book.txt"
+-OUTPUT_FILE = "audiobook_final.mp3"
+-
+-async def main():
+-    if not os.path.exists(INPUT_FILE):
+-        print("❌ book.txt پیدا نشد")
+-        return
+-
+-    with open(INPUT_FILE, "r", encoding="utf-8") as f:
+-        text = f.read().strip()
+-
+-    if not text:
+-        print("❌ book.txt خالی است")
+-        return
+-
+-    print("🎙️ در حال ساخت کتاب صوتی...")
+-    
+-    communicate = edge_tts.Communicate(
+-        text,
+-        voice=VOICE,
+-        rate=RATE,
+-        pitch=PITCH
+-    )
+-
+-    await communicate.save(OUTPUT_FILE)
+-
+-    print(f"✅ تمام شد: {OUTPUT_FILE}")
+-
+-if __name__ == "__main__":
+-    asyncio.run(main())
+diff --git a/backend/edge_book.py b/backend/edge_book.py
+deleted file mode 100644
+index 832948c..0000000
+--- a/backend/edge_book.py
++++ /dev/null
+@@ -1,38 +0,0 @@
+-import asyncio
+-import edge_tts
+-import os
+-
+-VOICE = "fa-IR-FaridNeural"
+-RATE = "-10%"
+-PITCH = "-8Hz"
+-
+-INPUT_FILE = "book.txt"
+-OUTPUT_FILE = "audiobook.mp3"
+-
+-async def main():
+-    if not os.path.exists(INPUT_FILE):
+-        print("❌ book.txt پیدا نشد")
+-        return
+-
+-    with open(INPUT_FILE, "r", encoding="utf-8") as f:
+-        text = f.read().strip()
+-
+-    if not text:
+-        print("❌ book.txt خالی است")
+-        return
+-
+-    print("🎙️ در حال ساخت کتاب صوتی...")
+-    
+-    communicate = edge_tts.Communicate(
+-        text,
+-        voice=VOICE,
+-        rate=RATE,
+-        pitch=PITCH
+-    )
+-
+-    await communicate.save(OUTPUT_FILE)
+-
+-    print(f"✅ تمام شد: {OUTPUT_FILE}")
+-
+-if __name__ == "__main__":
+-    asyncio.run(main())
+diff --git a/backend/main.py b/backend/main.py
+deleted file mode 100644
+index 327945c..0000000
+--- a/backend/main.py
++++ /dev/null
+@@ -1,38 +0,0 @@
+-from fastapi import FastAPI
+-from pydantic import BaseModel
+-import edge_tts
+-import uuid
+-from text_cleaner import prepare_text
+-
+-app = FastAPI(title="FarsiVoiceAI")
+-
+-
+-class TextRequest(BaseModel):
+-    text: str
+-
+-
+-@app.get("/")
+-def home():
+-    return {
+-        "message": "FarsiVoice AI آماده است"
+-    }
+-
+-
+-@app.post("/text")
+-async def process_text(request: TextRequest):
+-    filename = f"voice_{uuid.uuid4().hex}.mp3"
+-
+-    clean_text = prepare_text(request.text)
+-
+-    communicate = edge_tts.Communicate(
+-        clean_text,
+-        "fa-IR-FaridNeural"
+-    )
+-
+-    await communicate.save(filename)
+-
+-    return {
+-        "original_text": clean_text,
+-        "audio_file": filename,
+-        "message": "صدا ساخته شد"
+-    }
+diff --git a/backend/piper_engine.py b/backend/piper_engine.py
+deleted file mode 100644
+index 2055693..0000000
+--- a/backend/piper_engine.py
++++ /dev/null
+@@ -1,31 +0,0 @@
+-import subprocess
+-import os
+-
+-MODEL = "fa_IR-gyro-medium"
+-
+-def generate_voice(text, output_wav="output.wav"):
+-    raw_file = output_wav + ".raw"
+-
+-    subprocess.run(
+-        ["piper", "-m", MODEL, "-f", raw_file, "--", text],
+-        check=True
+-    )
+-
+-    subprocess.run(
+-        [
+-            "ffmpeg", "-y",
+-            "-f", "f32le",
+-            "-ar", "22050",
+-            "-ac", "1",
+-            "-i", raw_file,
+-            "-c:a", "pcm_s16le",
+-            output_wav
+-        ],
+-        check=True
+-    )
+-
+-    os.remove(raw_file)
+-
+-if __name__ == "__main__":
+-    generate_voice("سلام دنیا، من آواگویا هستم.", "output.wav")
+-    print("فایل صوتی ساخته شد: output.wav")
+diff --git a/backend/prosody.py b/backend/prosody.py
+deleted file mode 100644
+index b4e7a0c..0000000
+--- a/backend/prosody.py
++++ /dev/null
+@@ -1,25 +0,0 @@
+-import re
+-
+-def add_prosody(text):
+-    # مکث کوتاه بعد از ویرگول
+-    text = text.replace("،", "، <break_short>")
+-
+-    # مکث متوسط بعد از نقطه
+-    text = text.replace(".", ". <break_medium>")
+-
+-    # مکث سوالی
+-    text = text.replace("؟", "؟ <break_long>")
+-
+-    # مکث تعجبی
+-    text = text.replace("!", "! <break_medium>")
+-
+-    # مکث طبیعی برای سه نقطه
+-    text = text.replace("…", "… <break_long>")
+-
+-    return text
+-
+-
+-if __name__ == "__main__":
+-    sample = "ایران امروز، داستانی از تغییر و تحول است… اما آیا می‌توان گذشته را فراموش کرد؟"
+-
+-    print(add_prosody(sample))
+diff --git a/backend/test_clean.py b/backend/test_clean.py
+deleted file mode 100644
+index 2db25e8..0000000
+--- a/backend/test_clean.py
++++ /dev/null
+@@ -1,26 +0,0 @@
+-import re
+-
+-def clean_text(text):
+-    # حذف فاصله‌های اضافی
+-    text = re.sub(r'\s+', ' ', text)
+-
+-    # تبدیل سه نقطه به مکث
+-    text = text.replace("...", "…")
+-
+-    # اصلاح فاصله‌های اطراف علائم نگارشی
+-    text = re.sub(r'\s*،\s*', '، ', text)
+-    text = re.sub(r'\s*؛\s*', '؛ ', text)
+-    text = re.sub(r'\s*؟\s*', '؟ ', text)
+-    text = re.sub(r'\s*!\s*', '! ', text)
+-    text = re.sub(r'\s*\.\s*', '. ', text)
+-
+-    return text.strip()
+-
+-
+-if __name__ == "__main__":
+-    sample = """
+-    ایران امروز، داستانی از تغییر و تحول است...
+-    اما آیا می‌توان گذشته را فراموش کرد؟
+-    """
+-
+-    print(clean_text(sample))
+diff --git a/backend/test_diacritizer.py b/backend/test_diacritizer.py
+deleted file mode 100644
+index 4eb23aa..0000000
+--- a/backend/test_diacritizer.py
++++ /dev/null
+@@ -1,51 +0,0 @@
+-from transformers import CanineTokenizer, CanineForTokenClassification
+-
+-MODEL = "PedramR/canine-fa-diacritizer"
+-
+-MARKS = {
+-    "FATHA": "َ",
+-    "DAMMA": "ُ",
+-    "KASRA": "ِ",
+-    "SOKUN": "ْ",
+-    "SHADDA": "ّ",
+-    "SHADDA_FATHA": "َّ",
+-    "SHADDA_DAMMA": "ُّ",
+-    "SHADDA_KASRA": "ِّ",
+-    "FATHATAN": "ً",
+-}
+-
+-tokenizer = CanineTokenizer.from_pretrained(MODEL)
+-model = CanineForTokenClassification.from_pretrained(MODEL).eval()
+-
+-texts = [
+-    "مرد از خانه بیرون رفت.",
+-    "او مُرد و همه ناراحت شدند.",
+-    "شیر در جنگل زندگی می‌کند.",
+-    "شیر را در لیوان ریخت.",
+-    "علم و دانش بسیار ارزشمند است.",
+-    "او گُل را از باغ چید.",
+-    "کشاورز زمین را کِشت کرد.",
+-    "او دشمن خود را کُشت.",
+-]
+-
+-for text in texts:
+-    enc = tokenizer(
+-        text,
+-        return_tensors="pt",
+-        truncation=True,
+-        max_length=2048,
+-    )
+-
+-    preds = model(**enc).logits.argmax(-1)[0].tolist()
+-    id2label = model.config.id2label
+-    char_preds = preds[1:1 + len(text)]
+-
+-    output = []
+-
+-    for ch, pid in zip(text, char_preds):
+-        output.append(ch)
+-        output.append(MARKS.get(id2label[pid], ""))
+-
+-    print("INPUT :", text)
+-    print("OUTPUT:", "".join(output))
+-    print()
+diff --git a/backend/voice_pipeline.py b/backend/voice_pipeline.py
+deleted file mode 100644
+index 1d019f6..0000000
+--- a/backend/voice_pipeline.py
++++ /dev/null
+@@ -1,20 +0,0 @@
+-from text_cleaner import clean_text
+-from prosody import add_prosody
+-
+-
+-def prepare_voice_text(text):
+-    cleaned = clean_text(text)
+-    voiced = add_prosody(cleaned)
+-
+-    return voiced
+-
+-
+-if __name__ == "__main__":
+-    text = """
+-    ایران امروز، داستانی از تغییر و تحول است...
+-    اما آیا می‌توان گذشته را فراموش کرد؟
+-    """
+-
+-    result = prepare_voice_text(text)
+-
+-    print(result)
+diff --git a/backend/book.txt b/examples/book.txt
+similarity index 100%
+rename from backend/book.txt
+rename to examples/book.txt
+diff --git a/farsivoice/__init__.py b/farsivoice/__init__.py
+new file mode 100644
+index 0000000..bcf92dd
+--- /dev/null
++++ b/farsivoice/__init__.py
+@@ -0,0 +1,6 @@
++"""FarsiVoiceAI - تبدیل متن فارسی به صدا."""
++
++from .pipeline import file_to_voice, prepare_text, text_to_voice
++
++__all__ = ["file_to_voice", "prepare_text", "text_to_voice"]
++__version__ = "0.2.0"
+diff --git a/farsivoice/__main__.py b/farsivoice/__main__.py
+new file mode 100644
+index 0000000..dd8a8c9
+--- /dev/null
++++ b/farsivoice/__main__.py
+@@ -0,0 +1,5 @@
++import sys
++
++from .cli import main
++
++sys.exit(main())
+diff --git a/farsivoice/api.py b/farsivoice/api.py
+new file mode 100644
+index 0000000..c329fbe
+--- /dev/null
++++ b/farsivoice/api.py
+@@ -0,0 +1,75 @@
++"""HTTP API (replaces backend/main.py).
++
++Run:  uvicorn farsivoice.api:app --host 0.0.0.0 --port 8000
++"""
++
++import os
++import uuid
++from typing import Optional
++
++from fastapi import FastAPI, File, HTTPException, UploadFile
++from fastapi.responses import FileResponse
++from pydantic import BaseModel
++
++from . import config
++from .engines import EngineError
++from .pipeline import prepare_text, text_to_voice
++
++app = FastAPI(title="FarsiVoiceAI")
++os.makedirs(config.OUTPUT_DIR, exist_ok=True)
++
++
++class TextRequest(BaseModel):
++    text: str
++    engine: Optional[str] = None
++    voice: Optional[str] = None
++    rate: Optional[str] = None
++    pitch: Optional[str] = None
++    diacritize: bool = False
++
++
++async def _generate(text: str, engine=None, diacritize=False, **opts) -> dict:
++    ext = ".wav" if (engine or config.DEFAULT_ENGINE) == "piper" else ".mp3"
++    filename = f"voice_{uuid.uuid4().hex}{ext}"
++    path = os.path.join(config.OUTPUT_DIR, filename)
++    try:
++        await text_to_voice(text, path, engine=engine, diacritize=diacritize, **opts)
++    except ValueError as exc:
++        raise HTTPException(status_code=400, detail=str(exc))
++    except EngineError as exc:
++        raise HTTPException(status_code=502, detail=str(exc))
++    return {
++        "text": prepare_text(text),
++        "audio_file": filename,
++        "audio_url": f"/audio/{filename}",
++        "message": "صدا ساخته شد",
++    }
++
++
++@app.get("/")
++def home():
++    return {"message": "FarsiVoice AI آماده است"}
++
++
++@app.post("/text")
++async def from_text(req: TextRequest):
++    return await _generate(req.text, engine=req.engine, diacritize=req.diacritize,
++                           voice=req.voice, rate=req.rate, pitch=req.pitch)
++
++
++@app.post("/file")
++async def from_file(file: UploadFile = File(...), engine: Optional[str] = None):
++    raw = await file.read()
++    try:
++        text = raw.decode("utf-8-sig")
++    except UnicodeDecodeError:
++        raise HTTPException(status_code=400, detail="فایل باید متنی و با کدگذاری UTF-8 باشد")
++    return await _generate(text, engine=engine)
++
++
++@app.get("/audio/{filename}")
++def get_audio(filename: str):
++    path = os.path.join(config.OUTPUT_DIR, os.path.basename(filename))
++    if not os.path.isfile(path):
++        raise HTTPException(status_code=404, detail="فایل پیدا نشد")
++    return FileResponse(path)
+diff --git a/farsivoice/cli.py b/farsivoice/cli.py
+new file mode 100644
+index 0000000..331b7fc
+--- /dev/null
++++ b/farsivoice/cli.py
+@@ -0,0 +1,58 @@
++"""Command line:  python -m farsivoice book.txt [-o out.mp3] [--engine auto]"""
++
++import argparse
++import asyncio
++import os
++import sys
++
++from . import config
++from .engines import EngineError
++from .pipeline import file_to_voice
++
++
++def build_parser() -> argparse.ArgumentParser:
++    p = argparse.ArgumentParser(prog="farsivoice", description="تبدیل فایل متنی فارسی به صدا")
++    p.add_argument("input", help="فایل متنی ورودی (UTF-8)")
++    p.add_argument("-o", "--output", help="فایل خروجی (پیش‌فرض: نام ورودی با پسوند mp3 یا wav)")
++    p.add_argument("-e", "--engine", default=config.DEFAULT_ENGINE, choices=["edge", "piper", "auto"],
++                   help="موتور صدا (پیش‌فرض: %(default)s)")
++    p.add_argument("--voice", help=f"صدای Edge (پیش‌فرض: {config.EDGE_VOICE})")
++    p.add_argument("--rate", help=f"سرعت Edge (پیش‌فرض: {config.EDGE_RATE})".replace("%", "%%"))
++    p.add_argument("--pitch", help=f"زیروبمی Edge (پیش‌فرض: {config.EDGE_PITCH})")
++    p.add_argument("--model", help=f"مدل Piper (پیش‌فرض: {config.PIPER_MODEL})")
++    p.add_argument("--pause", type=float, dest="sentence_pause",
++                   help=f"مکث بین جمله‌ها در Piper به ثانیه (پیش‌فرض: {config.SENTENCE_PAUSE})")
++    p.add_argument("--diacritize", action="store_true", help="اعراب‌گذاری خودکار قبل از خواندن (نیاز به transformers)")
++    return p
++
++
++def main(argv=None) -> int:
++    args = build_parser().parse_args(argv)
++
++    if not os.path.isfile(args.input):
++        print(f"❌ فایل پیدا نشد: {args.input}")
++        return 1
++
++    output = args.output
++    if not output:
++        ext = ".wav" if args.engine == "piper" else ".mp3"
++        output = os.path.splitext(args.input)[0] + ext
++
++    print(f"🎙️ در حال ساخت صدا با موتور {args.engine} ...")
++    try:
++        asyncio.run(file_to_voice(
++            args.input, output,
++            engine=args.engine, diacritize=args.diacritize,
++            voice=args.voice, rate=args.rate, pitch=args.pitch,
++            model=args.model, sentence_pause=args.sentence_pause,
++        ))
++    except (EngineError, ValueError, RuntimeError) as exc:
++        print(f"❌ {exc}")
++        return 1
++
++    print(f"✅ تمام شد: {output}")
++    return 0
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/farsivoice/config.py b/farsivoice/config.py
+new file mode 100644
+index 0000000..9a79dfe
+--- /dev/null
++++ b/farsivoice/config.py
+@@ -0,0 +1,27 @@
++"""Single source of truth for all default settings.
++
++These values are taken from the "golden" script (edge_audiobook_golden.py)
++so the generated voice sounds exactly like before.
++Every value can be overridden from the CLI or with environment variables.
++"""
++
++import os
++
++# --- Edge TTS (online, Microsoft) ---
++EDGE_VOICE = os.getenv("FARSIVOICE_VOICE", "fa-IR-FaridNeural")
++EDGE_RATE = os.getenv("FARSIVOICE_RATE", "-11%")
++EDGE_PITCH = os.getenv("FARSIVOICE_PITCH", "-8Hz")
++
++# --- Piper (offline) ---
++PIPER_BIN = os.getenv("FARSIVOICE_PIPER_BIN", "piper")
++PIPER_MODEL = os.getenv("FARSIVOICE_PIPER_MODEL", "fa_IR-gyro-medium")
++PIPER_SAMPLE_RATE = 22050
++
++# Silence inserted between sentences by the Piper engine (seconds).
++SENTENCE_PAUSE = float(os.getenv("FARSIVOICE_SENTENCE_PAUSE", "0.6"))
++
++# Default engine: "edge", "piper" or "auto" (edge, falls back to piper).
++DEFAULT_ENGINE = os.getenv("FARSIVOICE_ENGINE", "edge")
++
++# Where the API stores generated audio files.
++OUTPUT_DIR = os.getenv("FARSIVOICE_OUTPUT_DIR", "output")
+diff --git a/farsivoice/diacritics.py b/farsivoice/diacritics.py
+new file mode 100644
+index 0000000..6d08edc
+--- /dev/null
++++ b/farsivoice/diacritics.py
+@@ -0,0 +1,92 @@
++"""Optional Persian diacritization (اعراب‌گذاری).
++
++Merges test_diacritizer.py (model inference) and diacritizer_postprocess.py,
++which were never connected to each other or to the pipeline before.
++
++The model needs `transformers` + `torch` (see requirements-diacritizer.txt).
++They are imported lazily, so the rest of the project works without them.
++"""
++
++import re
++
++MODEL_NAME = "PedramR/canine-fa-diacritizer"
++
++MARKS = {
++    "FATHA": "َ",
++    "DAMMA": "ُ",
++    "KASRA": "ِ",
++    "SOKUN": "ْ",
++    "SHADDA": "ّ",
++    "SHADDA_FATHA": "َّ",
++    "SHADDA_DAMMA": "ُّ",
++    "SHADDA_KASRA": "ِّ",
++    "FATHATAN": "ً",
++}
++
++_model = None
++_tokenizer = None
++
++
++def postprocess_diacritics(text: str) -> str:
++    """Clean CANINE Persian diacritization output for TTS."""
++    # حذف اعراب تکراری
++    text = re.sub(r"([ًٌٍَُِّْ])\1+", r"\1", text)
++
++    # حذف ترکیب متناقض ضمه+کسره روی «ک»
++    text = text.replace("کُِ", "کِ")
++
++    # حذف سکون در انتهای کلمات
++    text = re.sub(r"ْ(?=\s|[.!؟،,:؛]|$)", "", text)
++
++    # حذف فاصله‌های اضافی
++    text = re.sub(r"\s+", " ", text).strip()
++
++    return text
++
++
++def _load():
++    global _model, _tokenizer
++    if _model is None:
++        try:
++            from transformers import CanineForTokenClassification, CanineTokenizer
++        except ImportError as exc:  # pragma: no cover
++            raise RuntimeError(
++                "برای اعراب‌گذاری باید نصب کنید: pip install -r requirements-diacritizer.txt"
++            ) from exc
++        _tokenizer = CanineTokenizer.from_pretrained(MODEL_NAME)
++        _model = CanineForTokenClassification.from_pretrained(MODEL_NAME).eval()
++    return _tokenizer, _model
++
++
++def diacritize_line(text: str) -> str:
++    tokenizer, model = _load()
++    enc = tokenizer(text, return_tensors="pt", truncation=True, max_length=2048)
++    preds = model(**enc).logits.argmax(-1)[0].tolist()
++    id2label = model.config.id2label
++    char_preds = preds[1:1 + len(text)]
++
++    out = []
++    for ch, pid in zip(text, char_preds):
++        out.append(ch)
++        out.append(MARKS.get(id2label[pid], ""))
++    return postprocess_diacritics("".join(out))
++
++
++def diacritize(text: str) -> str:
++    """Diacritize text line by line (keeps paragraph breaks)."""
++    return "\n".join(diacritize_line(line) if line.strip() else line for line in text.split("\n"))
++
++
++if __name__ == "__main__":
++    samples = [
++        "مرد از خانه بیرون رفت.",
++        "او مُرد و همه ناراحت شدند.",
++        "شیر در جنگل زندگی می‌کند.",
++        "شیر را در لیوان ریخت.",
++        "کشاورز زمین را کِشت کرد.",
++        "او دشمن خود را کُشت.",
++    ]
++    for s in samples:
++        print("INPUT :", s)
++        print("OUTPUT:", diacritize_line(s))
++        print()
+diff --git a/farsivoice/engines.py b/farsivoice/engines.py
+new file mode 100644
+index 0000000..06a4600
+--- /dev/null
++++ b/farsivoice/engines.py
+@@ -0,0 +1,150 @@
++"""TTS engines.
++
++- edge  : Microsoft Edge neural voices (online). Replaces the 9 copies of
++          edge_audiobook*.py / edge_book.py.
++- piper : fully offline. Replaces piper_engine.py + book_to_voice.py.
++- auto  : try edge, fall back to piper if edge fails (e.g. no internet / blocked).
++
++Every engine exposes:  async synthesize(text, output_path) -> output_path
++"""
++
++import asyncio
++import os
++import shutil
++import subprocess
++import tempfile
++
++from . import config
++from .text import split_sentences
++
++
++class EngineError(RuntimeError):
++    pass
++
++
++def _require(binary: str, hint: str) -> None:
++    if shutil.which(binary) is None:
++        raise EngineError(f"«{binary}» پیدا نشد. {hint}")
++
++
++def _ffmpeg(*args: str) -> None:
++    subprocess.run(
++        ["ffmpeg", "-y", "-loglevel", "error", *args],
++        check=True,
++    )
++
++
++class EdgeEngine:
++    name = "edge"
++
++    def __init__(self, voice=None, rate=None, pitch=None):
++        self.voice = voice or config.EDGE_VOICE
++        self.rate = rate or config.EDGE_RATE
++        self.pitch = pitch or config.EDGE_PITCH
++
++    async def synthesize(self, text: str, output_path: str) -> str:
++        try:
++            import edge_tts
++        except ImportError as exc:
++            raise EngineError("edge-tts نصب نیست: pip install edge-tts") from exc
++
++        tmp_mp3 = output_path if output_path.lower().endswith(".mp3") else output_path + ".mp3"
++        communicate = edge_tts.Communicate(text, voice=self.voice, rate=self.rate, pitch=self.pitch)
++        try:
++            await communicate.save(tmp_mp3)
++        except Exception as exc:  # network errors, 403, DNS, ...
++            if os.path.exists(tmp_mp3):
++                os.remove(tmp_mp3)  # don't leave an empty/partial file behind
++            raise EngineError(f"Edge TTS ناموفق بود: {exc}") from exc
++
++        if tmp_mp3 != output_path:  # user asked for .wav / .ogg ...
++            _require("ffmpeg", "برای خروجی غیر از mp3 لازم است: pkg install ffmpeg")
++            _ffmpeg("-i", tmp_mp3, output_path)
++            os.remove(tmp_mp3)
++        return output_path
++
++
++class PiperEngine:
++    name = "piper"
++
++    def __init__(self, model=None, sentence_pause=None):
++        self.model = model or config.PIPER_MODEL
++        self.sentence_pause = config.SENTENCE_PAUSE if sentence_pause is None else sentence_pause
++
++    def _sentence_to_wav(self, sentence: str, wav_path: str) -> None:
++        raw = wav_path + ".piper"
++        subprocess.run([config.PIPER_BIN, "-m", self.model, "-f", raw, "--", sentence], check=True)
++        with open(raw, "rb") as f:
++            is_wav = f.read(4) == b"RIFF"
++        if is_wav:
++            # Piper already wrote a proper WAV: just normalize the format.
++            _ffmpeg("-i", raw, "-ar", str(config.PIPER_SAMPLE_RATE), "-ac", "1", "-c:a", "pcm_s16le", wav_path)
++        else:
++            # Raw float32 output (the behaviour the old piper_engine.py relied on).
++            _ffmpeg("-f", "f32le", "-ar", str(config.PIPER_SAMPLE_RATE), "-ac", "1",
++                    "-i", raw, "-c:a", "pcm_s16le", wav_path)
++        os.remove(raw)
++
++    def _synthesize_sync(self, text: str, output_path: str) -> str:
++        _require(config.PIPER_BIN, "Piper را نصب کنید: pip install piper-tts")
++        _require("ffmpeg", "pkg install ffmpeg  (یا apt install ffmpeg)")
++
++        sentences = split_sentences(text)
++        if not sentences:
++            raise EngineError("متنی برای خواندن وجود ندارد")
++
++        with tempfile.TemporaryDirectory(prefix="farsivoice_") as tmp:
++            silence = os.path.join(tmp, "silence.wav")
++            _ffmpeg("-f", "lavfi", "-i", f"anullsrc=r={config.PIPER_SAMPLE_RATE}:cl=mono",
++                    "-t", str(self.sentence_pause), "-c:a", "pcm_s16le", silence)
++
++            parts = []
++            for i, sentence in enumerate(sentences, 1):
++                print(f"[{i}/{len(sentences)}] {sentence}")
++                wav = os.path.join(tmp, f"s{i:05d}.wav")
++                self._sentence_to_wav(sentence, wav)
++                parts.append(wav)
++                if i < len(sentences):
++                    parts.append(silence)
++
++            list_file = os.path.join(tmp, "list.txt")
++            with open(list_file, "w", encoding="utf-8") as f:
++                f.writelines(f"file '{p}'\n" for p in parts)
++
++            _ffmpeg("-f", "concat", "-safe", "0", "-i", list_file, output_path)
++        return output_path
++
++    async def synthesize(self, text: str, output_path: str) -> str:
++        return await asyncio.to_thread(self._synthesize_sync, text, output_path)
++
++
++class AutoEngine:
++    """Edge first; if it fails (offline / blocked), use Piper."""
++
++    name = "auto"
++
++    def __init__(self, **kwargs):
++        self.edge = EdgeEngine(**{k: v for k, v in kwargs.items() if k in ("voice", "rate", "pitch")})
++        self.piper = PiperEngine(**{k: v for k, v in kwargs.items() if k in ("model", "sentence_pause")})
++
++    async def synthesize(self, text: str, output_path: str) -> str:
++        try:
++            return await self.edge.synthesize(text, output_path)
++        except EngineError as exc:
++            print(f"⚠️ {exc}\n↪️ استفاده از Piper (آفلاین)...")
++            return await self.piper.synthesize(text, output_path)
++
++
++ENGINES = {"edge": EdgeEngine, "piper": PiperEngine, "auto": AutoEngine}
++
++
++def get_engine(name: str = None, **options):
++    name = (name or config.DEFAULT_ENGINE).lower()
++    if name not in ENGINES:
++        raise EngineError(f"موتور ناشناخته: {name}  (گزینه‌ها: {', '.join(ENGINES)})")
++    cls = ENGINES[name]
++    if cls is EdgeEngine:
++        options = {k: v for k, v in options.items() if k in ("voice", "rate", "pitch")}
++    elif cls is PiperEngine:
++        options = {k: v for k, v in options.items() if k in ("model", "sentence_pause")}
++    return cls(**{k: v for k, v in options.items() if v is not None})
+diff --git a/farsivoice/pipeline.py b/farsivoice/pipeline.py
+new file mode 100644
+index 0000000..dd4d150
+--- /dev/null
++++ b/farsivoice/pipeline.py
+@@ -0,0 +1,27 @@
++"""text -> (clean) -> (optional diacritize) -> engine -> audio file."""
++
++from .engines import get_engine
++from .text import clean_text
++
++
++def prepare_text(text: str, diacritize: bool = False) -> str:
++    text = clean_text(text)
++    if diacritize:
++        from .diacritics import diacritize as _diacritize
++        text = _diacritize(text)
++    return text
++
++
++async def text_to_voice(text: str, output_path: str, engine: str = None,
++                        diacritize: bool = False, **engine_options) -> str:
++    prepared = prepare_text(text, diacritize=diacritize)
++    if not prepared:
++        raise ValueError("متن خالی است")
++    tts = get_engine(engine, **engine_options)
++    return await tts.synthesize(prepared, output_path)
++
++
++async def file_to_voice(input_path: str, output_path: str, **kwargs) -> str:
++    with open(input_path, "r", encoding="utf-8") as f:
++        text = f.read()
++    return await text_to_voice(text, output_path, **kwargs)
+diff --git a/backend/text_cleaner.py b/farsivoice/text.py
+similarity index 56%
+rename from backend/text_cleaner.py
+rename to farsivoice/text.py
+index b998744..87576ef 100644
+--- a/backend/text_cleaner.py
++++ b/farsivoice/text.py
+@@ -1,27 +1,21 @@
+-import re
++"""Persian text preparation for TTS.
++
++Merges the old text_cleaner.py, test_clean.py and split_text() from
++book_to_voice.py into one module.
++"""
+ 
++import re
+ 
+-def normalize_numbers(text):
+-    numbers = {
+-        "0": "۰",
+-        "1": "۱",
+-        "2": "۲",
+-        "3": "۳",
+-        "4": "۴",
+-        "5": "۵",
+-        "6": "۶",
+-        "7": "۷",
+-        "8": "۸",
+-        "9": "۹",
+-    }
++_EN_TO_FA_DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
+ 
+-    for en, fa in numbers.items():
+-        text = text.replace(en, fa)
+ 
+-    return text
++def normalize_numbers(text: str) -> str:
++    """Convert English digits to Persian digits."""
++    return text.translate(_EN_TO_FA_DIGITS)
+ 
+ 
+-def clean_text(text):
++def clean_text(text: str) -> str:
++    """Normalize spacing and punctuation (same rules as the old text_cleaner)."""
+     # یکسان‌سازی فاصله‌های معمولی
+     text = re.sub(r"[ \t]+", " ", text)
+ 
+@@ -52,14 +46,8 @@ def clean_text(text):
+     return text.strip()
+ 
+ 
+-def prepare_text(text):
+-    return clean_text(text)
+-
+-
+-if __name__ == "__main__":
+-    sample = """
+-    ایران امروز با ایران دیروز فرق کرده است...
+-    در سال 1357 اتفاقات بزرگی رخ داد.
+-    """
+-
+-    print(clean_text(sample))
++def split_sentences(text: str) -> list[str]:
++    """Split text into sentences on . ! ؟ ؛ (used by the Piper engine)."""
++    text = re.sub(r"\s+", " ", text).strip()
++    sentences = re.split(r"(?<=[.!؟؛…])\s+", text)
++    return [s.strip() for s in sentences if s.strip()]
+diff --git a/pytest.ini b/pytest.ini
+new file mode 100644
+index 0000000..4584de7
+--- /dev/null
++++ b/pytest.ini
+@@ -0,0 +1,3 @@
++[pytest]
++testpaths = tests
++pythonpath = .
+diff --git a/requirements-api.txt b/requirements-api.txt
+new file mode 100644
+index 0000000..2f1ab70
+--- /dev/null
++++ b/requirements-api.txt
+@@ -0,0 +1,5 @@
++# اختیاری: سرور HTTP
++-r requirements.txt
++fastapi
++uvicorn
++python-multipart
+diff --git a/requirements-diacritizer.txt b/requirements-diacritizer.txt
+new file mode 100644
+index 0000000..586415f
+--- /dev/null
++++ b/requirements-diacritizer.txt
+@@ -0,0 +1,3 @@
++# اختیاری: اعراب‌گذاری خودکار (حجیم؛ روی گوشی ممکن است کند باشد)
++transformers
++torch
+diff --git a/requirements.txt b/requirements.txt
+new file mode 100644
+index 0000000..cc48fd2
+--- /dev/null
++++ b/requirements.txt
+@@ -0,0 +1,2 @@
++# هستهٔ برنامه (CLI + Edge TTS)
++edge-tts>=6.1
+diff --git a/tests/test_diacritics.py b/tests/test_diacritics.py
+new file mode 100644
+index 0000000..511511b
+--- /dev/null
++++ b/tests/test_diacritics.py
+@@ -0,0 +1,13 @@
++from farsivoice.diacritics import postprocess_diacritics
++
++
++def test_removes_repeated_marks():
++    assert postprocess_diacritics("مَََرد") == "مَرد"
++
++
++def test_removes_trailing_sukun():
++    assert postprocess_diacritics("مردْ رفتْ.") == "مرد رفت."
++
++
++def test_fixes_contradictory_kaf():
++    assert postprocess_diacritics("کُِتاب") == "کِتاب"
+diff --git a/tests/test_pipeline.py b/tests/test_pipeline.py
+new file mode 100644
+index 0000000..aa0f940
+--- /dev/null
++++ b/tests/test_pipeline.py
+@@ -0,0 +1,53 @@
++import asyncio
++
++import pytest
++
++from farsivoice import engines, pipeline
++from farsivoice.engines import AutoEngine, EdgeEngine, EngineError, PiperEngine, get_engine
++
++
++def test_get_engine_defaults_match_golden_settings():
++    e = get_engine("edge")
++    assert isinstance(e, EdgeEngine)
++    assert (e.voice, e.rate, e.pitch) == ("fa-IR-FaridNeural", "-11%", "-8Hz")
++
++
++def test_get_engine_ignores_irrelevant_options():
++    assert isinstance(get_engine("piper", voice="x", rate=None), PiperEngine)
++    assert isinstance(get_engine("auto", rate="-5%"), AutoEngine)
++
++
++def test_unknown_engine():
++    with pytest.raises(EngineError):
++        get_engine("gemini")
++
++
++def test_text_to_voice_cleans_before_engine(monkeypatch, tmp_path):
++    seen = {}
++
++    class Fake:
++        async def synthesize(self, text, out):
++            seen["text"] = text
++            return out
++
++    monkeypatch.setattr(pipeline, "get_engine", lambda *a, **k: Fake())
++    asyncio.run(pipeline.text_to_voice("سال 1400 ...", str(tmp_path / "o.mp3")))
++    assert seen["text"] == "سال ۱۴۰۰ …"
++
++
++def test_empty_text_rejected(tmp_path):
++    with pytest.raises(ValueError):
++        asyncio.run(pipeline.text_to_voice("  ", str(tmp_path / "o.mp3")))
++
++
++def test_auto_falls_back_to_piper(monkeypatch, tmp_path):
++    async def edge_fail(self, text, out):
++        raise EngineError("blocked")
++
++    async def piper_ok(self, text, out):
++        return "piper:" + out
++
++    monkeypatch.setattr(engines.EdgeEngine, "synthesize", edge_fail)
++    monkeypatch.setattr(engines.PiperEngine, "synthesize", piper_ok)
++    result = asyncio.run(AutoEngine().synthesize("سلام", "x.wav"))
++    assert result == "piper:x.wav"
+diff --git a/tests/test_text.py b/tests/test_text.py
+new file mode 100644
+index 0000000..c519706
+--- /dev/null
++++ b/tests/test_text.py
+@@ -0,0 +1,32 @@
++from farsivoice.text import clean_text, normalize_numbers, split_sentences
++
++
++def test_normalize_numbers():
++    assert normalize_numbers("سال 1357") == "سال ۱۳۵۷"
++
++
++def test_clean_text_spacing_and_punctuation():
++    src = "  ایران امروز ، داستانی است...\n   در سال 1357 اتفاقی رخ داد .بعد"
++    out = clean_text(src)
++    assert "…" in out
++    assert " ،" not in out
++    assert "۱۳۵۷" in out
++    assert "داد. بعد" in out
++    assert "\n " not in out
++
++
++def test_clean_text_collapses_blank_lines():
++    assert clean_text("الف\n\n\n\nب") == "الف\n\nب"
++
++
++def test_split_sentences():
++    text = "امروز ایران را ببینیم. حالا برویم سراغ داستان؟ این فقط یک آزمایش است!"
++    assert split_sentences(text) == [
++        "امروز ایران را ببینیم.",
++        "حالا برویم سراغ داستان؟",
++        "این فقط یک آزمایش است!",
++    ]
++
++
++def test_split_sentences_empty():
++    assert split_sentences("   \n ") == []
+-- 
+2.39.5
+

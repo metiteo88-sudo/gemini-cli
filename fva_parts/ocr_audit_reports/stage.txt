@@ -1,0 +1,45 @@
+ocr_audit stage   raw=manual_scripts/golden/main_content_raw.txt   cleaned=core.text_cleaner:clean_text   ref=manual_scripts/golden/FINAL/main_content_cleaned.txt
+NOTE: ref = best available text, not ground truth.
+
+pages: 325
+WER raw     -> ref : 32.77%
+WER cleaned -> ref : 33.04%
+ref words fixed by cleaner : 244
+ref words BROKEN by cleaner: 221   (correct in raw, wrong after cleaning)
+
+== category                 raw  cleaned   delta
+   glued                     6719     6637     -82
+   char_insert_delete        2624     2579     -45
+   char_substitution         2260     2265      +5
+   split                     1095     1208    +113
+   zwnj                       717      719      +2
+   glued_and_chars            546      555      +9
+   split_and_chars            520      553     +33
+   arabic_letter_form         188      189      +1
+   missing_text               127      138     +11
+   extra_text                 104      131     +27
+
+== regressions introduced by the cleaner (ref -> cleaned), most frequent
+      6  'درآغاز' -> 'در آغاز'
+      4  'بدرم' -> 'پدرم'
+      4  'برروی' -> 'بر روی'
+      2  'جهیسست' -> 'ج هیست'
+      1  'طبقه\u200cها بیک دیگر وابسته\u200cوهمدل' -> 'همدل'
+      1  'واوزان\u200cومقا' -> 'واوزان و مقا'
+      1  'روشهای ایرانیان پیروی\u200cوختسسسی' -> 'ختسسسی'
+      1  'بس\u200cوالا' -> 'بس و الا'
+      1  'ومض\u200cولان آن را' -> 'ومض و لان آنرا'
+      1  'را که باروح\u200cوسنشهای' -> 'راکه باروح و سنشهای'
+      1  'سیاسی\u200cومفشوی' -> 'سیاسی و مفشوی'
+      1  'و دانش و فلسفه رادرآنچا گردآوردن' -> 'ودانش وفلسفه رادر آنچا گسرد آ ورد'
+      1  'خوددرآ' -> 'خوددر آ'
+      1  'فتحعلیشاه\u200cو ناپلشون' -> 'فتحعلیشاه و ناپلئون'
+      1  'ب وده' -> 'بوده'
+      1  'می\u200cدهد بدرم در سال' -> 'میدهد پدرم درسال'
+      1  'سردارسپه\u200cوسپس' -> 'سردارسپه و سپس'
+      1  'هن\u200cگام\u200cوی دوهزاری' -> 'هن\u200cگام و ی دوهزار'
+      1  'دراختیسا' -> 'در اختیسا'
+      1  'از یاران بدرم' -> 'ازیاران پدرم'
+
+== sample of words the cleaner fixed
+   در(69)  آن(25)  و(17)  آخرین(6)  درآمد(5)  آینده(4)  بوسیله(4)  همه(4)  آستانه(3)  آذربایجان(3)  آنجا(3)  رابطه(3)  جبهه(3)  مصاحبه(3)  اعلامیه(3)  به(2)  بر(2)  آنها(2)  آشین(2)  متحده(2)

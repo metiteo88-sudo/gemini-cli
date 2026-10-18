@@ -1,0 +1,285 @@
+From 0e0403d9724ab36ab67fb4851c90fbc789f0ea5d Mon Sep 17 00:00:00 2001
+From: FarsiVoiceAI <farsivoiceai@gmail.com>
+Date: Sun, 18 Oct 2026 19:09:13 +0000
+Subject: [PATCH] =?UTF-8?q?dirty-sample=20fixes:=20keep=20digit=20runs=20(?=
+ =?UTF-8?q?1500000=20was=20read=20150);=20keep=20waw=20compounds=20(=D9=86?=
+ =?UTF-8?q?=D8=AE=D8=B3=D8=AA=E2=80=8C=D9=88=D8=B2=DB=8C=D8=B1,=20=D8=A8?=
+ =?UTF-8?q?=D9=87=D8=B1=D9=87=E2=80=8C=D9=88=D8=B1=DB=8C);=20speak=20headi?=
+ =?UTF-8?q?ngs=20and=20TOC;=20make=20=C2=AB/=C2=BB=20in=20numbers=20explic?=
+ =?UTF-8?q?it=20(=DB=B2/=DB=B5=DB=B0=DB=B0/=DB=B0=DB=B0=DB=B0,=20=DB=B2=20?=
+ =?UTF-8?q?=D9=85=D9=85=DB=8C=D8=B2=20=DB=B5);=20tests?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ backend/audiobook.py                     | 19 ++++--
+ backend/core/text_cleaner.py             | 43 +++++++++++-
+ backend/fva.py                           | 19 ++++--
+ backend/processors/ocr_normalizer.py     |  3 +-
+ backend/tests/test_dirty_sample_fixes.py | 87 ++++++++++++++++++++++++
+ 5 files changed, 160 insertions(+), 11 deletions(-)
+ create mode 100644 backend/tests/test_dirty_sample_fixes.py
+
+diff --git a/backend/audiobook.py b/backend/audiobook.py
+index 047c223..3855758 100644
+--- a/backend/audiobook.py
++++ b/backend/audiobook.py
+@@ -77,9 +77,17 @@ def is_heading(item):
+     return t in HEADING_TYPES or "head" in t or "title" in t
+ 
+ 
++def spoken_heading(text):
++    """تیتر را جملهٔ مستقل می‌کند تا بعدش مکث بیاید."""
++    text = text.strip()
++    return text if text[-1:] in ".!?؟:…؛" else text + "."
++
++
+ def split_chapters(items):
++    # تیترها خوانده می‌شوند (قبلاً فقط نام فایل می‌شدند و در صدا گم می‌شدند)؛
++    # تیترهای پشت‌سرهم (مثل فهرست) همه در همان فصل می‌مانند.
+     chapters = []
+-    cur_title, cur_paras = "آغاز", []
++    cur_title, cur_paras, has_body = "آغاز", [], False
+ 
+     for it in items:
+         text = (it.get("text") or "").strip()
+@@ -87,12 +95,15 @@ def split_chapters(items):
+             continue
+ 
+         if is_heading(it):
+-            if cur_paras:
++            if has_body:
+                 chapters.append((cur_title, cur_paras))
+-                cur_paras = []
+-            cur_title = text
++                cur_paras, has_body = [], False
++            if not cur_paras:
++                cur_title = text
++            cur_paras.append(spoken_heading(text))
+         else:
+             cur_paras.append(text)
++            has_body = True
+ 
+     if cur_paras:
+         chapters.append((cur_title, cur_paras))
+diff --git a/backend/core/text_cleaner.py b/backend/core/text_cleaner.py
+index 7f6f15a..d9502b7 100644
+--- a/backend/core/text_cleaner.py
++++ b/backend/core/text_cleaner.py
+@@ -12,14 +12,52 @@ def normalize_numbers(text):
+     return text
+ 
+ 
++# کتاب «/» را هم جداکنندهٔ هزارگان (۲/۵۰۰/۰۰۰) و هم ممیز (۲/۵ میلیون) به کار می‌برد.
++# فرید «/» را قابل‌پیش‌بینی نمی‌خواند (ممکن است «دو پنجم» بگوید)، پس صریحش می‌کنیم.
++# تاریخ‌ها (۱۳۵۷/۱۱/۲۲) دست نمی‌خورند.
++_THOUSANDS_SLASH_RE = re.compile(r"(?<![۰-۹/])([۰-۹]{1,3})((?:/[۰-۹]{3})+)(?![۰-۹/])")
++_DECIMAL_SLASH_RE = re.compile(r"(?<![۰-۹/])([۰-۹]+)/([۰-۹]+)(?![۰-۹/])")
++
++
++def normalize_number_separators(text):
++    """۲/۵۰۰/۰۰۰ → ۲۵۰۰۰۰۰ ، ۲/۵ → ۲ ممیز ۵ (فقط ارقام فارسی؛ بعد از normalize_numbers)."""
++    text = _THOUSANDS_SLASH_RE.sub(lambda m: m.group(1) + m.group(2).replace("/", ""), text)
++    return _DECIMAL_SLASH_RE.sub(r"\1 ممیز \2", text)
++
++
+ def remove_extra_kasra(text):
+     """حذف کسره‌ی اضافه‌ی نمایشی (ِ) که در OCR قدیمی رایج است."""
+     return text.replace("\u0650", "")
+ 
+ 
++# واژه‌هایی که «و» جزء خودشان است، نه «و»ی عطف (از متن واقعی کتاب):
++# نخست‌وزیر، جلای‌وطن، هم‌وطن، بی‌وقفه، حمله‌ور، پیشه‌وران، بهره‌وری،
++# می‌ورزید، ورزشی، وارد، وی، دیوانه‌وار، ...
++_WAW_STEM_RE = re.compile(
++    r"و(?:زیر|طن|قف|فا|زن|زد|رز|ارد|ار(?![\u0600-\u06FF])|ند(?![\u0600-\u06FF])"
++    r"|ری(?![\u0600-\u06FF])|ر(?![\u0600-\u06FF])|ران(?![\u0600-\u06FF])"
++    r"|ی(?![\u0600-\u06FF])|یژ)"
++)
++_WAW_KEEP_LEFT = {"می", "نمی", "بی", "هم"}
++_WAW_SPACE_LEFT = {"به", "با", "از", "در", "که", "بر", "تا"}
++_ATTACHED_WAW_RE = re.compile(r"([\u0600-\u06FF]+)\u200c(و)(\u200c?)([\u0600-\u06FF]*)")
++
++
+ def fix_attached_waw(text):
+-    """اصلاح «و»ی عطف چسبیده با نیم‌فاصله."""
+-    return re.sub(r"\u200cو\u200c?", " و ", text)
++    """اصلاح «و»ی عطف چسبیده با نیم‌فاصله (وابسته‌وهمدل → وابسته و همدل).
++
++    واژه‌های مرکبی که «و» جزء خودشان است دست نمی‌خورند (نخست‌وزیر، بهره‌وری)،
++    و «به‌وی» → «به وی» می‌شود نه «به و ی».
++    """
++    def repl(m):
++        left, waw, zw, rest = m.groups()
++        word = waw + rest
++        if not zw and (left in _WAW_KEEP_LEFT or _WAW_STEM_RE.match(word)):
++            if left in _WAW_SPACE_LEFT:
++                return left + " " + word
++            return m.group(0)
++        return left + " و " + rest if rest else left + " و"
++    return _ATTACHED_WAW_RE.sub(repl, text)
+ 
+ 
+ _HAMZA_FIXES = (
+@@ -171,6 +209,7 @@ def clean_text(text, convert_years: bool = False):
+         text = convert_years_to_words(text)
+ 
+     text = normalize_numbers(text)
++    text = normalize_number_separators(text)
+     text = remove_extra_kasra(text)
+     text = fix_attached_waw(text)
+     text = fix_hamza_words(text)
+diff --git a/backend/fva.py b/backend/fva.py
+index c4430b2..e568eb4 100644
+--- a/backend/fva.py
++++ b/backend/fva.py
+@@ -70,10 +70,18 @@ def is_heading(item):
+     return t in HEADING_TYPES or "head" in t or "title" in t
+ 
+ 
++def spoken_heading(text):
++    """تیتر را جملهٔ مستقل می‌کند تا بعدش مکث بیاید."""
++    text = text.strip()
++    return text if text[-1:] in ".!?؟:…؛" else text + "."
++
++
+ def split_chapters(items):
+     """Convert pipeline items to chapters: [(title, [paragraphs])]"""
++    # تیترها خوانده می‌شوند (قبلاً فقط نام فایل می‌شدند و در صدا گم می‌شدند)؛
++    # تیترهای پشت‌سرهم (مثل فهرست) همه در همان فصل می‌مانند.
+     chapters = []
+-    cur_title, cur_paras = "مقدمه", []
++    cur_title, cur_paras, has_body = "مقدمه", [], False
+ 
+     for it in items:
+         text = (it.get("text") or "").strip()
+@@ -81,12 +89,15 @@ def split_chapters(items):
+             continue
+ 
+         if is_heading(it):
+-            if cur_paras:
++            if has_body:
+                 chapters.append((cur_title, cur_paras))
+-                cur_paras = []
+-            cur_title = text
++                cur_paras, has_body = [], False
++            if not cur_paras:
++                cur_title = text
++            cur_paras.append(spoken_heading(text))
+         else:
+             cur_paras.append(text)
++            has_body = True
+ 
+     if cur_paras:
+         chapters.append((cur_title, cur_paras))
+diff --git a/backend/processors/ocr_normalizer.py b/backend/processors/ocr_normalizer.py
+index aafae16..66bdf62 100644
+--- a/backend/processors/ocr_normalizer.py
++++ b/backend/processors/ocr_normalizer.py
+@@ -52,7 +52,8 @@ def normalize_ocr_line(line: str) -> str:
+ 
+     # حذف کشیدگی حروف و تکرارهای OCR مانند «ااا» یا «للل»
+     line = re.sub(r"ـ+", "", line)
+-    line = re.sub(r"(\w)\1{2,}", r"\1", line)
++    # فقط حروف تکراری (سسسس→س)؛ رقم‌ها نه: ۱۵۰۰۰۰۰ نباید ۱۵۰ شود
++    line = re.sub(r"([^\W\d_])\1{2,}", r"\1", line)
+ 
+     for source, target in OCR_SPACING_RULES:
+         line = re.sub(
+diff --git a/backend/tests/test_dirty_sample_fixes.py b/backend/tests/test_dirty_sample_fixes.py
+new file mode 100644
+index 0000000..66f5f07
+--- /dev/null
++++ b/backend/tests/test_dirty_sample_fixes.py
+@@ -0,0 +1,87 @@
++"""باگ‌هایی که آزمون متن کثیف (صفحه‌های واقعی کتاب) پیدا کرد.
++
++هر مورد از خروجی واقعی fva.py روی متن کتاب آمده است:
++- ۱۵۰۰۰۰۰ نفر → ۱۵۰ نفر (ocr_normalizer صفرها را «حرف تکراری» می‌دید)
++- نخست‌وزیر → نخست و زیر (fix_attached_waw)
++- تیتر و فهرست هرگز خوانده نمی‌شدند (split_chapters)
++- «/» در عدد مبهم بود (۲/۵ میلیون، ۲/۵۰۰/۰۰۰)
++"""
++import os
++import sys
++
++import pytest
++
++sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
++
++from processors.ocr_normalizer import normalize_ocr_line  # noqa: E402
++from core.text_cleaner import fix_attached_waw, clean_text  # noqa: E402
++
++
++# ── ۱. عددها نباید کوتاه شوند ──
++@pytest.mark.parametrize("src", ["برابر با ۱۵۰۰۰۰۰ نفر", "۱۰۰۰۰۰۰", "سال ۱۳۳۳", "1000000"])
++def test_digit_runs_survive_ocr_normalizer(src):
++    assert normalize_ocr_line(src) == src
++
++
++def test_repeated_letters_still_collapse():
++    assert normalize_ocr_line("ایس سسسسسران") == "ایس سران"
++
++
++# ── ۲. «و» چسبیده ──
++@pytest.mark.parametrize("src,expected", [
++    ("وابسته\u200cوهمدل", "وابسته و همدل"),
++    ("صلح\u200cوامنیت", "صلح و امنیت"),
++    ("خانه\u200cو\u200cکاشانه", "خانه و کاشانه"),
++    ("به\u200cوی", "به وی"),
++])
++def test_attached_waw_conjunction_is_split(src, expected):
++    assert fix_attached_waw(src) == expected
++
++
++@pytest.mark.parametrize("word", [
++    "نخست\u200cوزیر", "نخست\u200cوزیری", "جلای\u200cوطن", "هم\u200cوطنان", "بی\u200cوقفه",
++    "حمله\u200cور", "پیشه\u200cوران", "پیشه\u200cوری", "بهره\u200cوری", "می\u200cورزید",
++    "دیوانه\u200cوار", "قهرمانان\u200cورزشی",
++])
++def test_compounds_with_waw_are_kept(word):
++    assert fix_attached_waw(word) == word
++
++
++# ── ۳. «/» در عدد ──
++@pytest.mark.parametrize("src,expected", [
++    ("۲/۵ میلیون خانواده", "۲ ممیز ۵ میلیون خانواده"),
++    ("۲/۵۰۰/۰۰۰ نفر", "۲۵۰۰۰۰۰ نفر"),
++    ("۲۵۰/۰۰۰ تن", "۲۵۰۰۰۰ تن"),
++    ("2/5 درصد", "۲ ممیز ۵ درصد"),
++    ("در ۱۳۵۷/۱۱/۲۲", "در ۱۳۵۷/۱۱/۲۲"),
++])
++def test_number_slash(src, expected):
++    assert clean_text(src) == expected
++
++
++# ── ۴. تیترها خوانده می‌شوند ──
++ITEMS = [
++    {"type": "heading", "text": "پاسخ به تاریخ"},
++    {"type": "heading", "text": "دیباچه"},
++    {"type": "heading", "text": "قسمت اول: پاسخ به تاریخ"},
++    {"type": "paragraph", "text": "متن دیباچه."},
++    {"type": "heading", "text": "فصل چهارم"},
++    {"type": "paragraph", "text": "متن فصل."},
++]
++
++
++@pytest.mark.parametrize("module", ["fva", "audiobook"])
++def test_headings_are_spoken(module):
++    mod = pytest.importorskip(module)
++    chapters = mod.split_chapters(ITEMS)
++    assert chapters == [
++        ("پاسخ به تاریخ", ["پاسخ به تاریخ.", "دیباچه.", "قسمت اول: پاسخ به تاریخ.", "متن دیباچه."]),
++        ("فصل چهارم", ["فصل چهارم.", "متن فصل."]),
++    ]
++
++
++@pytest.mark.parametrize("module", ["fva", "audiobook"])
++def test_no_headings_unchanged(module):
++    mod = pytest.importorskip(module)
++    chapters = mod.split_chapters([{"type": "paragraph", "text": "الف"}, {"type": "paragraph", "text": "ب"}])
++    assert len(chapters) == 1 and chapters[0][1] == ["الف", "ب"]
+-- 
+2.39.5
+

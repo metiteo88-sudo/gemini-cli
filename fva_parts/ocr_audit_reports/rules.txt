@@ -1,0 +1,42 @@
+ocr_audit rules   table=processors.ocr_normalizer:OCR_SPACING_RULES   mode=token   hyp=manual_scripts/golden/main_content_raw.txt   ref=manual_scripts/golden/FINAL/main_content_cleaned.txt
+Each rule is applied ALONE to hyp; delta = word edits after - before (negative = better).
+NOTE: ref = best available text, not ground truth.
+
+REF-KEEPS-SRC = the reference itself still contains the source form, so a
+                'hurt' may mean the REFERENCE is unclean. A human must judge.
+good~ = clearly helps; hurts on <= 1 of 10 pages (often noise in the reference).
+summary: good~=19, REF-KEEPS-SRC=12, unused=1
+
+   verdict         hits  helped  hurt  delta  in_ref  rule
+   REF-KEEPS-SRC    114       0   114   +271     157  'دراین' -> 'در این'
+   good~             75      71     1   -154       4  'بودکه' -> 'بود که'
+   good~             80      79     1   -186       8  'رابه' -> 'را به'
+   good~             61      59     2   -132       2  'درایران' -> 'در ایران'
+   good~             64      62     1   -158       2  'درسال' -> 'در سال'
+   REF-KEEPS-SRC     52       0    52   +103     108  'خودرا' -> 'خود را'
+   good~             52      52     0   -123       9  'ازاین' -> 'از این'
+   good~             28      26     2    -50       2  'ازآن' -> 'از آن'
+   unused             0       0     0     +0       0  'استکه' -> 'است که'
+   good~             31      29     2    -58       2  'درآن' -> 'در آن'
+   good~             26      25     1    -47       6  'درمقابل' -> 'در مقابل'
+   good~             26      26     0    -59       0  'راکه' -> 'را که'
+   REF-KEEPS-SRC     18       0    18    +35      20  'درطی' -> 'در طی'
+   REF-KEEPS-SRC     19       0    19    +39      26  'درحقیقت' -> 'در حقیقت'
+   REF-KEEPS-SRC     20       0    20    +37      30  'درمیان' -> 'در میان'
+   REF-KEEPS-SRC     18       0    18    +41      22  'بااین' -> 'با این'
+   good~             22      21     0    -45       0  'شدکه' -> 'شد که'
+   REF-KEEPS-SRC     15       0    15    +30      22  'ازجمله' -> 'از جمله'
+   REF-KEEPS-SRC     13       0    13    +28      24  'درمورد' -> 'در مورد'
+   good~             15      15     0    -33       0  'کشورما' -> 'کشور ما'
+   good~             20      20     0    -36       9  'آنرا' -> 'آن را'
+   good~             10      10     0    -20       0  'درراه' -> 'در راه'
+   good~             21      19     0    -40       2  'درتهران' -> 'در تهران'
+   good~              7       7     0    -13       0  'وجوددارد' -> 'وجود دارد'
+   REF-KEEPS-SRC     16       1    15    +30      17  'بهمین' -> 'به همین'
+   good~             15      15     0    -31       0  'برایران' -> 'برای ایران'
+   REF-KEEPS-SRC     26       0    26    +50      34  'بوجود' -> 'به وجود'
+   REF-KEEPS-SRC     12       0    12    +12      18  'آشها' -> 'آنها'
+   good~             32      32     0    -36       0  'اقتمادی' -> 'اقتصادی'
+   good~             18      18     0    -18       0  'آیران' -> 'ایران'
+   REF-KEEPS-SRC     16       1    15    +30      17  'بهمین' -> 'به همین'
+   good~             10      10     0    -12       0  'مساشل' -> 'مسائل'

@@ -1,7 +1,7 @@
 From 3c3c350265a3f9e5b32d32c001f6503aa8f63ed4 Mon Sep 17 00:00:00 2001
 From: FarsiVoiceAI <farsivoiceai@gmail.com>
 Date: Sun, 18 Oct 2026 18:35:45 +0000
-Subject: [PATCH 1/4] =?UTF-8?q?text=5Fcleaner:=20stop=20corrupting=20words?=
+Subject: [PATCH 1/5] =?UTF-8?q?text=5Fcleaner:=20stop=20corrupting=20words?=
  =?UTF-8?q?=20(=D9=81=D8=B1=D8=B2=D9=86=D8=AF=D9=85=E2=86=92=D9=81=D8=B1Ne?=
  =?UTF-8?q?d=D9=85,=20=D8=AF=D8=B1=D8=A2=D9=85=D8=AF=E2=86=92=D8=AF=D8=B1?=
  =?UTF-8?q?=20=D8=A2=D9=85=D8=AF,=20=D8=B5=D9=81=D8=AD=D9=87=20deleted,=20?=

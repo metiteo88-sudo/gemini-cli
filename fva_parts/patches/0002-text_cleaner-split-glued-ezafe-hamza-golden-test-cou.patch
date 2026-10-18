@@ -1,7 +1,7 @@
 From e9a4ea216e67c59cf4011408786228c440e38207 Mon Sep 17 00:00:00 2001
 From: FarsiVoiceAI <farsivoiceai@gmail.com>
 Date: Sun, 18 Oct 2026 18:36:31 +0000
-Subject: [PATCH 2/4] =?UTF-8?q?text=5Fcleaner:=20split=20glued=20ezafe=20h?=
+Subject: [PATCH 2/5] =?UTF-8?q?text=5Fcleaner:=20split=20glued=20ezafe=20h?=
  =?UTF-8?q?amza=20(=D9=88=D8=B8=DB=8C=D9=81=D9=87=D8=A1=D8=AE=D8=B7=DB=8C?=
  =?UTF-8?q?=D8=B1=E2=86=92=D9=88=D8=B8=DB=8C=D9=81=D9=87=20=D8=AE=D8=B7?=
  =?UTF-8?q?=DB=8C=D8=B1);=20golden=20test=20counts=20only=20real=20page-ma?=

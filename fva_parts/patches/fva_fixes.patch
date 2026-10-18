@@ -1,7 +1,7 @@
 From 3c3c350265a3f9e5b32d32c001f6503aa8f63ed4 Mon Sep 17 00:00:00 2001
 From: FarsiVoiceAI <farsivoiceai@gmail.com>
 Date: Sun, 18 Oct 2026 18:35:45 +0000
-Subject: [PATCH 1/4] =?UTF-8?q?text=5Fcleaner:=20stop=20corrupting=20words?=
+Subject: [PATCH 1/5] =?UTF-8?q?text=5Fcleaner:=20stop=20corrupting=20words?=
  =?UTF-8?q?=20(=D9=81=D8=B1=D8=B2=D9=86=D8=AF=D9=85=E2=86=92=D9=81=D8=B1Ne?=
  =?UTF-8?q?d=D9=85,=20=D8=AF=D8=B1=D8=A2=D9=85=D8=AF=E2=86=92=D8=AF=D8=B1?=
  =?UTF-8?q?=20=D8=A2=D9=85=D8=AF,=20=D8=B5=D9=81=D8=AD=D9=87=20deleted,=20?=
@@ -97,7 +97,7 @@ index 9de4e5d..067c175 100644
 From e9a4ea216e67c59cf4011408786228c440e38207 Mon Sep 17 00:00:00 2001
 From: FarsiVoiceAI <farsivoiceai@gmail.com>
 Date: Sun, 18 Oct 2026 18:36:31 +0000
-Subject: [PATCH 2/4] =?UTF-8?q?text=5Fcleaner:=20split=20glued=20ezafe=20h?=
+Subject: [PATCH 2/5] =?UTF-8?q?text=5Fcleaner:=20split=20glued=20ezafe=20h?=
  =?UTF-8?q?amza=20(=D9=88=D8=B8=DB=8C=D9=81=D9=87=D8=A1=D8=AE=D8=B7=DB=8C?=
  =?UTF-8?q?=D8=B1=E2=86=92=D9=88=D8=B8=DB=8C=D9=81=D9=87=20=D8=AE=D8=B7?=
  =?UTF-8?q?=DB=8C=D8=B1);=20golden=20test=20counts=20only=20real=20page-ma?=
@@ -212,7 +212,7 @@ index 0000000..50b0fce
 From 91e0d7244570b9f814797569a56959feea13c081 Mon Sep 17 00:00:00 2001
 From: FarsiVoiceAI <farsivoiceai@gmail.com>
 Date: Sun, 18 Oct 2026 18:38:05 +0000
-Subject: [PATCH 3/4] fva_agents: fix HISTORICAL_NAMES import; approve
+Subject: [PATCH 3/5] fva_agents: fix HISTORICAL_NAMES import; approve
  text_cleaner OCR fixes in scope guard; send SSML (is_ssml=True) to Edge like
  main.py/fva.py; add tests
 
@@ -312,7 +312,7 @@ index 0000000..a3f4be3
 From 284e0ffe6fc14b94f9675ed2cf14d720c3003491 Mon Sep 17 00:00:00 2001
 From: FarsiVoiceAI <farsivoiceai@gmail.com>
 Date: Sun, 18 Oct 2026 18:38:35 +0000
-Subject: [PATCH 4/4] =?UTF-8?q?tts=5Flexicon:=20single=20source=20of=20tru?=
+Subject: [PATCH 4/5] =?UTF-8?q?tts=5Flexicon:=20single=20source=20of=20tru?=
  =?UTF-8?q?th=20=E2=80=94=20re-export=20core.lexicon.TTS=5FLEXICON=20(copi?=
  =?UTF-8?q?es=20were=20identical,=2081=20entries)?=
 MIME-Version: 1.0
@@ -420,6 +420,763 @@ index 3cf7828..7a4991e 100644
 +from core.lexicon import TTS_LEXICON  # noqa: F401
 +
 +__all__ = ["TTS_LEXICON"]
+-- 
+2.39.5
+
+
+From b6c2ac50dab29211a6c4703bf9cad01c094001c4 Mon Sep 17 00:00:00 2001
+From: FarsiVoiceAI <farsivoiceai@gmail.com>
+Date: Sun, 18 Oct 2026 18:50:16 +0000
+Subject: [PATCH 5/5] =?UTF-8?q?skills:=20add=20ocr-audit=20(map/quality/st?=
+ =?UTF-8?q?age/rules)=20=E2=80=94=20read-only,=20stdlib-only=20OCR=20stage?=
+ =?UTF-8?q?=20audit=20with=20collision=20and=20unclean-reference=20guards;?=
+ =?UTF-8?q?=20tests?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .skills/ocr-audit/SKILL.md      |  67 ++++
+ .skills/ocr-audit/ocr_audit.py  | 548 ++++++++++++++++++++++++++++++++
+ .skills/ocr-pipeline-mapper.md  |   2 +
+ backend/tests/test_ocr_audit.py |  89 ++++++
+ 4 files changed, 706 insertions(+)
+ create mode 100644 .skills/ocr-audit/SKILL.md
+ create mode 100644 .skills/ocr-audit/ocr_audit.py
+ create mode 100644 backend/tests/test_ocr_audit.py
+
+diff --git a/.skills/ocr-audit/SKILL.md b/.skills/ocr-audit/SKILL.md
+new file mode 100644
+index 0000000..d255aaf
+--- /dev/null
++++ b/.skills/ocr-audit/SKILL.md
+@@ -0,0 +1,67 @@
++# ocr-audit
++بازرسی مرحلهٔ «اسکن → متن خام» (و هر مرحلهٔ متنی بعدی) با عدد واقعی، نه حدس.
++جایگزین پیشرفتهٔ ocr-pipeline-mapper.md و مکمل ocr-cleanup.
++ابزار: `.skills/ocr-audit/ocr_audit.py` (فقط کتابخانهٔ استاندارد پایتون؛ در Termux بدون نصب اجرا می‌شود).
++
++## قانون‌ها
++1. فقط‌خواندنی است. هیچ ورودی را تغییر نمی‌دهد؛ اگر --out برابر ورودی باشد، اجرا متوقف می‌شود.
++2. گزارش‌ها .txt هستند و در `backend/work/ocr_audit/` ذخیره می‌شوند.
++3. به golden/ دست نزن. فقط آن را بخوان.
++4. مرجع (ref) «بهترین متن موجود» است، نه حقیقت. FINAL هم با زنجیرهٔ خودکار (cleaner + postfix + LLM) ساخته شده
++   و هنوز خطای OCR دارد (مثلاً «آشها» به‌جای «آنها»). اختلاف یعنی «یک انسان نگاه کند»، نه «خودکار اصلاح کن».
++5. هیچ قاعده‌ای بدون اجرای `rules` روی دادهٔ واقعی و تأیید کاربر وارد کد نمی‌شود.
++6. دستورها را یکی‌یکی بده و منتظر خروجی بمان.
++
++## ترتیب کار (همیشه از backend)
++`cd ~/FarsiVoiceAI/backend`
++
++۱) نقشه: کدام فایل OCR واقعاً در مسیر تولید است، کدام یتیم است، کدام مسیرش خراب است.
++`python3 ../.skills/ocr-audit/ocr_audit.py map --extra ../extract-book-standalone`
++- PROD = از main/fva/fva_agents/pipeline قابل دسترسی است (زنجیره در via: آمده).
++- SCRIPT = جدا اجرا می‌شود. ORPHAN = هیچ‌کدام. TEST = تست.
++- +BROKEN = خطای نحوی دارد، یا مسیری مثل tests/golden/... که دیگر وجود ندارد.
++
++۲) کیفیت: متن خام OCR در برابر مرجع، صفحه‌به‌صفحه (هر دو فایل باید [[page N]] داشته باشند).
++`python3 ../.skills/ocr-audit/ocr_audit.py quality manual_scripts/golden/main_content_raw.txt manual_scripts/golden/FINAL/main_content_cleaned.txt`
++- WER و CER تقریبی، به‌همراه دسته‌بندی خطا:
++  - glued: واژه‌های چسبیده (درسال در برابر «در سال»)
++  - split: واژهٔ شکسته (کشا ورزی)
++  - zwnj: فرق فقط در نیم‌فاصله
++  - char_insert_delete: حرف اضافه یا جاافتاده، مثل «س» اضافهٔ tesseract (ایسران)
++  - char_substitution: جابه‌جایی حرف (ابران، اقتمادی)
++  - glued_and_chars و split_and_chars: هم فاصله و هم حرف
++  - arabic_letter_form: ي/ك عربی
++  - missing_text و extra_text: متن جاافتاده یا اضافه
++- «top character confusions» نشان می‌دهد OCR کدام حرف را با کدام اشتباه می‌گیرد.
++- «rule candidates» قاعده‌های پیشنهادی است با ستون collide:
++  - collide = چند بار همان شکل غلط در مرجع به‌عنوان واژهٔ درست آمده است.
++  - collide بزرگ‌تر از صفر یعنی RISKY: قاعدهٔ کور متن سالم را خراب می‌کند (درس ماجرای «رزندم» و «بدرم»).
++- با `--apply core.text_cleaner:clean_text` می‌توان خروجی یک تمیزکننده را هم سنجید.
++
++۳) سهم هر مرحله: تمیزکننده چه چیزی را درست کرد و چه چیزی را خراب کرد؟
++`python3 ../.skills/ocr-audit/ocr_audit.py stage manual_scripts/golden/main_content_raw.txt manual_scripts/golden/FINAL/main_content_cleaned.txt --apply core.text_cleaner:clean_text`
++- «BROKEN by cleaner» = واژه‌ای که در متن خام با مرجع یکی بود و بعد از تمیزکاری دیگر نیست.
++- فهرست regressions را یکی‌یکی نگاه کن: گاهی تمیزکننده درست می‌گوید و مرجع غلط است (مثلاً «بدرم» در FINAL).
++
++۴) سنجش قاعده‌ها، قبل از اعتماد:
++`python3 ../.skills/ocr-audit/ocr_audit.py rules manual_scripts/golden/main_content_raw.txt manual_scripts/golden/FINAL/main_content_cleaned.txt --table processors.ocr_normalizer:OCR_SPACING_RULES --mode token`
++- هر قاعده جداگانه اجرا می‌شود و برای هر کدام شمرده می‌شود: چند صفحه بهتر شد (helped)، چند صفحه بدتر شد (hurt)، و delta.
++- برای جدول‌هایی که جایگزینی رشته‌ای انجام می‌دهند (مثل `core.text_cleaner:_OCR_JOINED_FIXES`) از `--mode substring` استفاده کن.
++- معنی verdictها:
++  - good یا good~: کمک می‌کند.
++  - HARMFUL: خراب می‌کند و مرجع هم شکل منبع را ندارد؛ پیشنهاد حذف، با تأیید کاربر.
++  - REF-KEEPS-SRC: مرجع خودش شکل منبع را دارد؛ آزمون نمی‌تواند داوری کند و انسان تصمیم می‌گیرد.
++  - unused: در این کتاب هیچ اثری ندارد.
++
++## گزینه‌های کلی (قبل از نام فرمان)
++`--out مسیر.txt`، `--top 40`، `--root .`
++نمونه: `python3 ../.skills/ocr-audit/ocr_audit.py --top 40 quality A.txt B.txt --min-count 5`
++
++## گزارش به کاربر (کوتاه)
++مکان (گوشی، بکاپ یا ابر)، فرمان، سه عدد اصلی، سه نمونه، و یک پیشنهاد که با `rules` سنجیده شده باشد. سپس منتظر تأیید بمان.
++
++## محدودیت‌های شناخته‌شده
++- WER و CER از هم‌ترازی difflib است، نه Levenshtein کامل؛ برای مقایسهٔ نسبی (قبل و بعد) دقیق است.
++- اگر صفحه‌بندی دو فایل فرق کند، فقط صفحه‌های مشترک مقایسه می‌شوند (تعدادشان در گزارش آمده).
++- تشخیص مسیر خراب در map ایستا است: مسیرهایی که در زمان اجرا ساخته می‌شوند دیده نمی‌شوند.
++- تست‌ها: `python3 -m pytest tests/test_ocr_audit.py -q`
+diff --git a/.skills/ocr-audit/ocr_audit.py b/.skills/ocr-audit/ocr_audit.py
+new file mode 100644
+index 0000000..e811b1d
+--- /dev/null
++++ b/.skills/ocr-audit/ocr_audit.py
+@@ -0,0 +1,548 @@
++#!/usr/bin/env python3
++"""ocr_audit — read-only audit of the "scan -> raw text" stage (and any text stage).
++
++Commands (all read-only; reports are .txt under backend/work/ocr_audit/):
++  map      Static map of OCR-related code: imports, external tools, entrypoints,
++           hard-coded paths that no longer exist, reachability from production.
++  quality  Page-aligned comparison hyp vs ref: WER/CER + error taxonomy
++           (glued, split, ZWNJ, char confusions, missing/extra text) + rule candidates
++           with a collision check (would the rule damage correct text?).
++  stage    Attribution raw -> cleaned -> ref: what the cleaner fixed, what it BROKE.
++  rules    Measure every rule of an existing table (e.g. OCR_SPACING_RULES):
++           pages helped vs pages hurt, on real data, before anyone trusts it.
++
++The reference is "the best available text", not ground truth. Disagreements are
++candidates for human review, never automatic corrections. Stdlib only.
++"""
++from __future__ import annotations
++
++import argparse
++import ast
++import collections
++import difflib
++import importlib
++import os
++import re
++import sys
++import unicodedata
++from pathlib import Path
++
++PAGE_RE = re.compile(r"\[\[page (\d+)\]\]")
++TOKEN_RE = re.compile(r"[^\s.,،؛;:!?؟«»\"'()\[\]{}<>…\-–—/\\*|]+")
++MARKS_RE = re.compile(r"[\u064B-\u0652\u0670\u0640]")  # harakat + tatweel
++ZWNJ = "\u200c"
++LATIN_RE = re.compile(r"[A-Za-z]")
++ARABIC_FORMS_RE = re.compile(r"[يكة]")
++OCR_HINTS = ("tesseract", "pytesseract", "pdf2image", "pdfplumber", "pdftotext",
++             "pdftoppm", "fitz", "easyocr", "ocr")
++HINT_RE = re.compile(r"(?<![a-z])(" + "|".join(OCR_HINTS) + r")(?![a-z])")
++TOOLS = ("tesseract", "pdftotext", "pdftoppm", "pdfimages", "ffmpeg", "ffprobe")
++FILE_EXTS = {"txt", "png", "jpg", "pdf", "json", "py", "tsv", "csv", "log", "wav", "mp3",
++             "docx", "sh", "onnx", "md", "epub", "tif", "tiff"}
++MIME_RE = re.compile(r"^(application|text|image|audio|video)/")
++PATH_LIT_RE = re.compile(r"^[\w./~-]*/[\w./-]*$")
++
++
++# ----------------------------------------------------------------- loading
++def load_pages(path: str) -> dict[int, str]:
++    """{page: text}. Files without [[page N]] markers become page 0."""
++    text = Path(path).read_text(encoding="utf-8")
++    parts = PAGE_RE.split(text)
++    if len(parts) == 1:
++        return {0: text}
++    return {int(parts[i]): parts[i + 1].strip() for i in range(1, len(parts) - 1, 2)}
++
++
++DIGITS = str.maketrans("0123456789٠١٢٣٤٥٦٧٨٩", "۰۱۲۳۴۵۶۷۸۹" * 2)
++
++
++def norm(s: str) -> str:
++    """NFC, no diacritics/tatweel, all digits folded to Persian (a convention, not an error)."""
++    return MARKS_RE.sub("", unicodedata.normalize("NFC", s)).translate(DIGITS)
++
++
++def tokens(s: str) -> list[str]:
++    return TOKEN_RE.findall(norm(s).replace("\f", " "))
++
++
++def bare(tok: str) -> str:
++    return tok.replace(ZWNJ, "")
++
++
++def load_func(spec: str, root: str):
++    mod, _, attr = spec.partition(":")
++    sys.path.insert(0, root)
++    obj = importlib.import_module(mod)
++    for a in attr.split("."):
++        obj = getattr(obj, a)
++    return obj
++
++
++# ----------------------------------------------------------------- alignment
++class Stats:
++    def __init__(self):
++        self.ref_words = 0
++        self.word_err = 0
++        self.ref_chars = 0
++        self.char_err = 0
++        self.cat = collections.Counter()
++        self.ex = collections.defaultdict(list)
++        self.subs = collections.Counter()      # (hyp_tok, ref_tok)
++        self.joins = collections.Counter()     # ("درسال", "در سال")
++        self.splits = collections.Counter()    # ("در آمد", "درآمد")
++        self.conf = collections.Counter()      # (hyp_chars, ref_chars)
++        self.per_page = {}
++
++    def add_ex(self, cat, page, h, r, limit=8):
++        if len(self.ex[cat]) < limit:
++            self.ex[cat].append((page, h, r))
++
++
++def char_edits(a: str, b: str):
++    sm = difflib.SequenceMatcher(None, a, b, autojunk=False)
++    n, pairs = 0, []
++    for op, i1, i2, j1, j2 in sm.get_opcodes():
++        if op != "equal":
++            n += max(i2 - i1, j2 - j1)
++            pairs.append((a[i1:i2], b[j1:j2]))
++    return n, pairs
++
++
++def align(h: list[str], r: list[str]):
++    return difflib.SequenceMatcher(None, h, r, autojunk=False).get_opcodes()
++
++
++def _sim(a: str, b: str) -> float:
++    return difflib.SequenceMatcher(None, bare(a), bare(b), autojunk=False).ratio()
++
++
++MOVES = ((1, 1), (1, 2), (2, 1), (1, 3), (3, 1), (1, 0), (0, 1))
++
++
++def split_block(hs: list[str], rs: list[str]) -> list[tuple[list[str], list[str]]]:
++    """Mini-DP inside one mismatch block: cut it into 1:1, 1:n (glued), n:1 (split),
++    extra and missing pieces, so neighbouring errors are classified separately."""
++    n, m = len(hs), len(rs)
++    if n * m > 1600:
++        return [(hs, rs)]
++    inf = float("inf")
++    cost = [[inf] * (m + 1) for _ in range(n + 1)]
++    back = [[None] * (m + 1) for _ in range(n + 1)]
++    cost[0][0] = 0.0
++    for i in range(n + 1):
++        for j in range(m + 1):
++            if cost[i][j] == inf:
++                continue
++            for di, dj in MOVES:
++                a, b = i + di, j + dj
++                if a > n or b > m:
++                    continue
++                if di == 0 or dj == 0:
++                    c = 1.0
++                else:
++                    hj, rj = "".join(hs[i:a]), "".join(rs[j:b])
++                    c = 0.0 if bare(hj) == bare(rj) else (1.0 - _sim(hj, rj)) * 1.6 + 0.05 * (di + dj)
++                if cost[i][j] + c < cost[a][b]:
++                    cost[a][b] = cost[i][j] + c
++                    back[a][b] = (i, j)
++    pieces, i, j = [], n, m
++    while (i, j) != (0, 0):
++        pi, pj = back[i][j]
++        pieces.append((hs[pi:i], rs[pj:j]))
++        i, j = pi, pj
++    return pieces[::-1]
++
++
++def classify_piece(st: Stats, page: int, hs: list[str], rs: list[str]) -> None:
++    hj, rj = " ".join(hs), " ".join(rs)
++    if not rs:
++        st.cat["extra_text"] += 1
++        st.char_err += sum(len(t) for t in hs)
++        st.add_ex("extra_text", page, hj[:60], "")
++        return
++    if not hs:
++        st.cat["missing_text"] += 1
++        st.char_err += sum(len(t) for t in rs)
++        st.add_ex("missing_text", page, "", rj[:60])
++        return
++    if bare("".join(hs)) == bare("".join(rs)):
++        if len(hs) < len(rs):
++            c = "glued"
++            st.joins[(hj, rj)] += 1
++        elif len(hs) > len(rs):
++            c = "split"
++            st.splits[(hj, rj)] += 1
++        else:
++            c = "zwnj"
++        st.cat[c] += 1
++        st.add_ex(c, page, hj, rj)
++        return
++    n, pairs = char_edits(hj, rj)
++    st.char_err += n
++    for x, y in pairs:
++        st.conf[(x, y)] += 1
++    if len(hs) == 1 and len(rs) == 1:
++        st.subs[(hs[0], rs[0])] += 1
++        if LATIN_RE.search(hs[0]):
++            c = "latin_in_word"
++        elif ARABIC_FORMS_RE.search(hs[0]) and norm(rs[0]) == hs[0].replace(
++                "ي", "ی").replace("ك", "ک").replace("ة", "ه"):
++            c = "arabic_letter_form"
++        elif len(hs[0]) == len(rs[0]):
++            c = "char_substitution"
++        else:
++            c = "char_insert_delete"
++    elif len(hs) < len(rs):
++        c = "glued_and_chars"
++    elif len(hs) > len(rs):
++        c = "split_and_chars"
++    else:
++        c = "complex"
++    st.cat[c] += 1
++    st.add_ex(c, page, hj[:50], rj[:50])
++
++
++def score_page(st: Stats, page: int, hyp: str, ref: str) -> int:
++    h, r = tokens(hyp), tokens(ref)
++    st.ref_words += len(r)
++    st.ref_chars += sum(len(t) for t in r)
++    page_err = 0
++    for op, i1, i2, j1, j2 in align(h, r):
++        if op == "equal":
++            continue
++        page_err += max(i2 - i1, j2 - j1)
++        for hs, rs in split_block(h[i1:i2], r[j1:j2]):
++            classify_piece(st, page, hs, rs)
++    st.word_err += page_err
++    st.per_page[page] = (page_err, len(r))
++    return page_err
++
++
++def page_errors(hyp: str, ref: str) -> int:
++    h, r = tokens(hyp), tokens(ref)
++    return sum(max(i2 - i1, j2 - j1) for op, i1, i2, j1, j2 in align(h, r) if op != "equal")
++
++
++def matched_ref_positions(hyp: str, ref: str) -> set[int]:
++    h, r = tokens(hyp), tokens(ref)
++    out = set()
++    for op, i1, i2, j1, j2 in align(h, r):
++        if op == "equal":
++            out.update(range(j1, j2))
++    return out
++
++
++# ----------------------------------------------------------------- helpers
++def common_pages(a: dict, b: dict) -> list[int]:
++    return sorted(set(a) & set(b))
++
++
++def ref_vocab(ref_pages: dict) -> collections.Counter:
++    c = collections.Counter()
++    for t in ref_pages.values():
++        c.update(tokens(t))
++    return c
++
++
++def write_report(out: Path, lines: list[str], inputs: list[str]) -> None:
++    for i in inputs:
++        if i and Path(i).resolve() == out.resolve():
++            sys.exit(f"refusing to overwrite an input file: {out}")
++    out.parent.mkdir(parents=True, exist_ok=True)
++    out.write_text("\n".join(lines) + "\n", encoding="utf-8")
++    print("\n".join(lines[:60]))
++    if len(lines) > 60:
++        print(f"... ({len(lines) - 60} more lines)")
++    print(f"\nreport: {out}")
++
++
++def pct(a, b):
++    return f"{100.0 * a / b:.2f}%" if b else "n/a"
++
++
++# ----------------------------------------------------------------- quality
++def cmd_quality(a) -> None:
++    hyp, ref = load_pages(a.hyp), load_pages(a.ref)
++    if a.apply:
++        f = load_func(a.apply, a.root)
++        hyp = {p: f(t) for p, t in hyp.items()}
++    pages = common_pages(hyp, ref)
++    st = Stats()
++    for p in pages:
++        score_page(st, p, hyp[p], ref[p])
++    vocab = ref_vocab(ref)
++    hyp_vocab = collections.Counter()
++    for p in pages:
++        hyp_vocab.update(tokens(hyp[p]))
++
++    L = [f"ocr_audit quality   hyp={a.hyp}   ref={a.ref}" + (f"   apply={a.apply}" if a.apply else ""),
++         "NOTE: ref = best available text, not ground truth.", "",
++         f"pages compared: {len(pages)}  (hyp only: {len(set(hyp) - set(ref))}, ref only: {len(set(ref) - set(hyp))})",
++         f"WER ~ {pct(st.word_err, st.ref_words)}   ({st.word_err} word edits / {st.ref_words} ref words)",
++         f"CER ~ {pct(st.char_err, st.ref_chars)}   (character edits inside mismatches)", "",
++         "== error categories (occurrences)"]
++    for c, n in st.cat.most_common():
++        L.append(f"  {c:<22}{n:>7}")
++    for c in st.cat:
++        L.append(f"\n-- examples: {c}  (page | hyp -> ref)")
++        for p, h, r in st.ex[c]:
++            L.append(f"  p{p:<4} {h!r} -> {r!r}")
++    L.append("\n== top character confusions (hyp -> ref)")
++    for (x, y), n in st.conf.most_common(a.top):
++        L.append(f"  {x!r:>8} -> {y!r:<8}{n:>6}")
++    L.append("\n== worst pages (word edits / ref words)")
++    worst = sorted(st.per_page.items(), key=lambda kv: kv[1][0] / max(1, kv[1][1]), reverse=True)
++    for p, (e, n) in worst[:a.top]:
++        L.append(f"  p{p:<5}{e:>5} / {n:<5} {pct(e, n)}")
++
++    L.append("\n== rule candidates (seen >= %d times). collision = the hyp form also" % a.min_count)
++    L.append("   appears as a correct word in ref, so a blind rule would damage text.")
++    L.append(f"   {'kind':<7}{'n':>5}{'collide':>9}  hyp -> ref")
++    cands = [("subst", k, n) for k, n in st.subs.items() if n >= a.min_count]
++    cands += [("join", k, n) for k, n in st.joins.items() if n >= a.min_count]
++    cands += [("split", k, n) for k, n in st.splits.items() if n >= a.min_count]
++    cands.sort(key=lambda x: -x[2])
++    for kind, (h, r), n in cands[:a.top * 3]:
++        coll = vocab[h]
++        if kind == "split":
++            coll = sum(1 for p in pages if f" {h} " in f" {' '.join(tokens(ref[p]))} ")
++        flag = "SAFE?" if coll == 0 else "RISKY"
++        L.append(f"   {kind:<7}{n:>5}{coll:>9}  {h!r} -> {r!r}   {flag}")
++    L.append("\n'SAFE?' still needs `rules` measurement before it is applied.")
++    write_report(Path(a.out or Path(a.root) / "work/ocr_audit/quality.txt"), L, [a.hyp, a.ref])
++
++
++# ----------------------------------------------------------------- stage
++def cmd_stage(a) -> None:
++    raw, ref = load_pages(a.raw), load_pages(a.ref)
++    if a.cleaned:
++        cleaned = load_pages(a.cleaned)
++        label = a.cleaned
++    else:
++        f = load_func(a.apply, a.root)
++        cleaned = {p: f(t) for p, t in raw.items()}
++        label = a.apply
++    pages = sorted(set(raw) & set(ref) & set(cleaned))
++    s_raw, s_cln = Stats(), Stats()
++    fixed = broken = 0
++    broken_ex, fixed_ex = collections.Counter(), collections.Counter()
++    for p in pages:
++        score_page(s_raw, p, raw[p], ref[p])
++        score_page(s_cln, p, cleaned[p], ref[p])
++        mr, mc = matched_ref_positions(raw[p], ref[p]), matched_ref_positions(cleaned[p], ref[p])
++        r = tokens(ref[p])
++        lost, gained = mr - mc, mc - mr
++        broken += len(lost)
++        fixed += len(gained)
++        if lost:
++            ct = tokens(cleaned[p])
++            sm = difflib.SequenceMatcher(None, ct, r, autojunk=False)
++            for op, i1, i2, j1, j2 in sm.get_opcodes():
++                if op != "equal" and set(range(j1, j2)) & lost:
++                    broken_ex[(" ".join(r[j1:j2])[:40], " ".join(ct[i1:i2])[:40])] += 1
++        for j in list(gained)[:3]:
++            fixed_ex[r[j]] += 1
++    L = [f"ocr_audit stage   raw={a.raw}   cleaned={label}   ref={a.ref}",
++         "NOTE: ref = best available text, not ground truth.", "",
++         f"pages: {len(pages)}",
++         f"WER raw     -> ref : {pct(s_raw.word_err, s_raw.ref_words)}",
++         f"WER cleaned -> ref : {pct(s_cln.word_err, s_cln.ref_words)}",
++         f"ref words fixed by cleaner : {fixed}",
++         f"ref words BROKEN by cleaner: {broken}   (correct in raw, wrong after cleaning)", "",
++         f"== category            {'raw':>8}{'cleaned':>9}{'delta':>8}"]
++    for c in sorted(set(s_raw.cat) | set(s_cln.cat), key=lambda c: -s_raw.cat[c]):
++        L.append(f"   {c:<22}{s_raw.cat[c]:>8}{s_cln.cat[c]:>9}{s_cln.cat[c] - s_raw.cat[c]:>+8}")
++    L.append("\n== regressions introduced by the cleaner (ref -> cleaned), most frequent")
++    for (r, c), n in broken_ex.most_common(a.top):
++        L.append(f"   {n:>4}  {r!r} -> {c!r}")
++    L.append("\n== sample of words the cleaner fixed")
++    L.append("   " + "  ".join(f"{w}({n})" for w, n in fixed_ex.most_common(a.top)))
++    write_report(Path(a.out or Path(a.root) / "work/ocr_audit/stage.txt"), L, [a.raw, a.ref, a.cleaned])
++
++
++# ----------------------------------------------------------------- rules
++def _apply_rule(text: str, src: str, dst: str, mode: str) -> str:
++    if mode == "token":
++        return re.sub(rf"(?<!\w){re.escape(src)}(?!\w)", dst, text)
++    return text.replace(src, dst)
++
++
++def cmd_rules(a) -> None:
++    hyp, ref = load_pages(a.hyp), load_pages(a.ref)
++    table = load_func(a.table, a.root)
++    pairs = list(table.items()) if isinstance(table, dict) else list(table)
++    pages = common_pages(hyp, ref)
++    base = {}
++    L = [f"ocr_audit rules   table={a.table}   mode={a.mode}   hyp={a.hyp}   ref={a.ref}",
++         "Each rule is applied ALONE to hyp; delta = word edits after - before (negative = better).",
++         "NOTE: ref = best available text, not ground truth.", "",
++         "REF-KEEPS-SRC = the reference itself still contains the source form, so a",
++         "                'hurt' may mean the REFERENCE is unclean. A human must judge.",
++         "good~ = clearly helps; hurts on <= 1 of 10 pages (often noise in the reference).", "",
++         f"   {'verdict':<14}{'hits':>6}{'helped':>8}{'hurt':>6}{'delta':>7}{'in_ref':>8}  rule"]
++    ref_all = {p: norm(ref[p]) for p in pages}
++    verdicts = collections.Counter()
++    for src, dst in pairs:
++        hits = helped = hurt = delta = 0
++        for p in pages:
++            if src not in hyp[p]:
++                continue
++            new = _apply_rule(hyp[p], src, dst, a.mode)
++            if new == hyp[p]:
++                continue
++            hits += 1
++            if p not in base:
++                base[p] = page_errors(hyp[p], ref[p])
++            d = page_errors(new, ref[p]) - base[p]
++            delta += d
++            helped += d < 0
++            hurt += d > 0
++        in_ref = sum(len(re.findall(rf"(?<!\w){re.escape(norm(src))}(?!\w)", t)) if a.mode == "token"
++                     else t.count(norm(src)) for t in ref_all.values())
++        v = ("unused" if hits == 0 else
++             "good~" if delta < 0 and hurt * 10 <= helped else
++             "REF-KEEPS-SRC" if hurt and in_ref else
++             "HARMFUL" if hurt and delta >= 0 else
++             "mixed" if hurt else "good" if helped else "neutral")
++        verdicts[v] += 1
++        L.append(f"   {v:<14}{hits:>6}{helped:>8}{hurt:>6}{delta:>+7}{in_ref:>8}  {src!r} -> {dst!r}")
++    L.insert(7, "summary: " + ", ".join(f"{k}={n}" for k, n in verdicts.most_common()))
++    write_report(Path(a.out or Path(a.root) / "work/ocr_audit/rules.txt"), L, [a.hyp, a.ref])
++
++
++# ----------------------------------------------------------------- map
++def _module_name(path: Path, root: Path) -> str | None:
++    try:
++        rel = path.relative_to(root).with_suffix("")
++    except ValueError:
++        return None
++    return ".".join(rel.parts)
++
++
++def cmd_map(a) -> None:
++    root = Path(a.root).resolve()
++    scan_roots = [root] + [Path(x).resolve() for x in a.extra]
++    files = []
++    for sr in scan_roots:
++        for p in sorted(sr.rglob("*.py")):
++            if any(s in p.parts for s in ("__pycache__", ".git", "archive", "_archive_extra", "node_modules")):
++                continue
++            files.append(p)
++    info, graph = {}, collections.defaultdict(set)
++    modnames = {_module_name(p, root): p for p in files if _module_name(p, root)}
++    for p in files:
++        src = p.read_text(encoding="utf-8", errors="replace")
++        low = src.lower()
++        d = {"ocr": sorted(set(HINT_RE.findall(low))), "imports": set(), "tools": set(),
++             "main": "__main__" in src, "missing_paths": set(), "syntax": None}
++        try:
++            tree = ast.parse(src)
++        except SyntaxError as e:
++            d["syntax"] = f"line {e.lineno}"
++            info[p] = d
++            continue
++        fstr_parts = set()
++        for node in ast.walk(tree):
++            if isinstance(node, ast.Import):
++                d["imports"].update(n.name for n in node.names)
++            elif isinstance(node, ast.ImportFrom) and node.module:
++                d["imports"].add(node.module)
++                d["imports"].update(f"{node.module}.{n.name}" for n in node.names)
++            elif isinstance(node, ast.JoinedStr):
++                fstr_parts.update(id(v) for v in node.values)
++            elif (isinstance(node, ast.Constant) and isinstance(node.value, str)
++                  and id(node) not in fstr_parts):
++                v = node.value
++                last = v.rstrip("/").rsplit("/", 1)[-1]
++                is_pathish = v.endswith("/") or last.rsplit(".", 1)[-1].lower() in FILE_EXTS
++                is_pathish = is_pathish and not MIME_RE.match(v)
++                if v in TOOLS:
++                    d["tools"].add(v)
++                if (is_pathish and PATH_LIT_RE.match(v) and len(v) > 3 and not v.startswith(("http", "/"))
++                        and "." not in v.split("/")[0][:1] and "{" not in v):
++                    cands = [root / v, p.parent / v, root.parent / v]
++                    if not any(c.exists() for c in cands) and not v.startswith("~"):
++                        d["missing_paths"].add(v)
++        me = _module_name(p, root)
++        for imp in d["imports"]:
++            if imp in modnames and me:
++                graph[me].add(imp)
++        info[p] = d
++    reach, via = set(), {}
++    stack = [(e, e) for e in a.entry if e in modnames]
++    while stack:
++        m, chain = stack.pop()
++        if m in reach:
++            continue
++        reach.add(m)
++        via[m] = chain
++        stack.extend((n, f"{chain} -> {n}") for n in graph.get(m, ()))
++    ocr_files = [p for p in files if info[p]["ocr"] or info[p]["tools"] & {"tesseract", "pdftotext", "pdftoppm"}]
++    L = [f"ocr_audit map   root={root}   entrypoints={a.entry}", "",
++         f"python files scanned: {len(files)}   OCR-related: {len(ocr_files)}",
++         f"modules reachable from entrypoints: {len(reach)}", "",
++         "status: PROD = reachable from an entrypoint; SCRIPT = runnable on its own;",
++         "        ORPHAN = neither; BROKEN = syntax error or hard-coded paths that do not exist", ""]
++    rows = []
++    for p in ocr_files:
++        d = info[p]
++        me = _module_name(p, root)
++        is_test = "tests" in p.parts or p.name.startswith("test_")
++        status = ("PROD" if me in reach else "TEST" if is_test
++                  else "SCRIPT" if d["main"] else "ORPHAN")
++        if d["syntax"] or d["missing_paths"]:
++            status += "+BROKEN"
++        rel = os.path.relpath(p, root)
++        rows.append((status, rel, d))
++    rows.sort(key=lambda r: (not r[0].startswith("PROD"), r[0], r[1]))
++    for status, rel, d in rows:
++        L.append(f"[{status}] {rel}")
++        if status.startswith("PROD"):
++            L.append(f"    via: {via[_module_name(root / rel, root)]}")
++        L.append(f"    hints: {', '.join(d['ocr']) or '-'}   tools: {', '.join(sorted(d['tools'])) or '-'}")
++        if d["syntax"]:
++            L.append(f"    SYNTAX ERROR at {d['syntax']}")
++        if d["missing_paths"]:
++            L.append(f"    missing paths: {', '.join(sorted(d['missing_paths']))[:200]}")
++    cnt = collections.Counter(r[0] for r in rows)
++    L.insert(4, "summary: " + ", ".join(f"{k}={n}" for k, n in cnt.most_common()))
++    write_report(Path(a.out or root / "work/ocr_audit/map.txt"), L, [])
++
++
++# ----------------------------------------------------------------- cli
++def main(argv=None) -> None:
++    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
++    ap.add_argument("--root", default=".", help="backend directory (default: .)")
++    ap.add_argument("--out", help="report path (.txt)")
++    ap.add_argument("--top", type=int, default=20)
++    sub = ap.add_subparsers(dest="cmd", required=True)
++
++    m = sub.add_parser("map")
++    m.add_argument("--entry", nargs="+", default=["main", "fva", "fva_agents", "pipeline", "core.pipeline"])
++    m.add_argument("--extra", nargs="*", default=[], help="extra dirs to scan (e.g. ../extract-book-standalone)")
++
++    q = sub.add_parser("quality")
++    q.add_argument("hyp")
++    q.add_argument("ref")
++    q.add_argument("--apply", help="MODULE:FUNC applied to every hyp page first")
++    q.add_argument("--min-count", type=int, default=3)
++
++    s = sub.add_parser("stage")
++    s.add_argument("raw")
++    s.add_argument("ref")
++    g = s.add_mutually_exclusive_group(required=True)
++    g.add_argument("--cleaned", help="cleaned file with the same [[page N]] markers")
++    g.add_argument("--apply", help="MODULE:FUNC that cleans one page, e.g. core.text_cleaner:clean_text")
++
++    r = sub.add_parser("rules")
++    r.add_argument("hyp")
++    r.add_argument("ref")
++    r.add_argument("--table", required=True, help="MODULE:NAME of (src, dst) pairs or a dict")
++    r.add_argument("--mode", choices=["substring", "token"], default="substring")
++
++    a = ap.parse_args(argv)
++    {"map": cmd_map, "quality": cmd_quality, "stage": cmd_stage, "rules": cmd_rules}[a.cmd](a)
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/.skills/ocr-pipeline-mapper.md b/.skills/ocr-pipeline-mapper.md
+index 12653f0..919c697 100644
+--- a/.skills/ocr-pipeline-mapper.md
++++ b/.skills/ocr-pipeline-mapper.md
+@@ -4,3 +4,5 @@
+ - ورودی/خروجی هر مرحله را مستند کن.
+ - مسیرهای مرده یا نیمه‌کاره را علامت بزن.
+ - هیچ تغییری نده.
++
++> نسخهٔ پیشرفته با سنجش عددی: `.skills/ocr-audit/SKILL.md` (این فایل برای سابقه نگه داشته شده است).
+diff --git a/backend/tests/test_ocr_audit.py b/backend/tests/test_ocr_audit.py
+new file mode 100644
+index 0000000..fe6e991
+--- /dev/null
++++ b/backend/tests/test_ocr_audit.py
+@@ -0,0 +1,89 @@
++"""Tests for .skills/ocr-audit/ocr_audit.py on tiny data with known answers."""
++import importlib.util
++import pathlib
++
++import pytest
++
++TOOL = pathlib.Path(__file__).resolve().parents[2] / ".skills/ocr-audit/ocr_audit.py"
++spec = importlib.util.spec_from_file_location("ocr_audit", TOOL)
++oa = importlib.util.module_from_spec(spec)
++spec.loader.exec_module(oa)
++
++
++def test_categories():
++    st = oa.Stats()
++    hyp = "درسال ۱۳۲۰ ایسران کشا ورزی میشود و ابران"
++    ref = "در سال 1320 ایران کشاورزی می\u200cشود و ایران"
++    oa.score_page(st, 1, hyp, ref)
++    assert st.cat["glued"] == 1           # درسال -> در سال
++    assert st.cat["split"] == 1           # کشا ورزی -> کشاورزی
++    assert st.cat["zwnj"] == 1            # میشود -> می‌شود
++    assert st.cat["char_insert_delete"] == 1   # ایسران -> ایران
++    assert st.cat["char_substitution"] == 1    # ابران -> ایران
++    assert ("س", "") in st.conf
++    assert "1320" not in str(st.ex)       # digits folded: not an error
++
++
++def _write(tmp, name, pages):
++    p = tmp / name
++    p.write_text("\n".join(f"[[page {i}]]\n{t}" for i, t in pages.items()), encoding="utf-8")
++    return str(p)
++
++
++def test_rules_verdicts(tmp_path, monkeypatch):
++    hyp = _write(tmp_path, "hyp.txt", {1: "درسال گذشته آشها رفتند", 2: "درسال نو"})
++    ref = _write(tmp_path, "ref.txt", {1: "در سال گذشته آشها رفتند", 2: "در سال نو"})
++    mod = tmp_path / "rules_mod.py"
++    mod.write_text("T = [('درسال', 'در سال'), ('آشها', 'آنها'), ('گذشته', 'گ ذشته'), ('xyz', 'q')]\n",
++                   encoding="utf-8")
++    out = tmp_path / "r.txt"
++    oa.main(["--root", str(tmp_path), "--out", str(out), "rules", hyp, ref, "--table", "rules_mod:T"])
++    rows = {line.split("'")[1]: line.split()[0] for line in out.read_text(encoding="utf-8").splitlines()
++            if line.startswith("   ") and "'" in line}
++    assert rows["درسال"].startswith("good")
++    assert rows["آشها"] == "REF-KEEPS-SRC"    # reference is unclean: human decides
++    assert rows["گذشته"] == "REF-KEEPS-SRC"   # breaking a correct word that ref has
++    assert rows["xyz"] == "unused"
++
++
++def test_harmful_rule(tmp_path):
++    # rule splits a word that is correct in ref -> more errors, and ref never has the src token
++    hyp = _write(tmp_path, "hyp.txt", {1: "کتابها رسید"})
++    ref = _write(tmp_path, "ref.txt", {1: "کتابهای رسید"})
++    mod = tmp_path / "m2.py"
++    mod.write_text("T = [('کتابها', 'کتاب ها')]\n", encoding="utf-8")
++    out = tmp_path / "r.txt"
++    oa.main(["--root", str(tmp_path), "--out", str(out), "rules", hyp, ref, "--table", "m2:T", "--mode", "token"])
++    assert "HARMFUL" in out.read_text(encoding="utf-8")
++
++
++def test_unclean_ref_is_not_judged(tmp_path):
++    # the old «رزندم -> رزNedم» bug: ref contains the source, the tool must defer to a human
++    hyp = _write(tmp_path, "hyp.txt", {1: "فرزندم آمد"})
++    ref = _write(tmp_path, "ref.txt", {1: "فرزندم آمد"})
++    mod = tmp_path / "m3.py"
++    mod.write_text("T = [('رزندم', 'رزNedم')]\n", encoding="utf-8")
++    out = tmp_path / "r.txt"
++    oa.main(["--root", str(tmp_path), "--out", str(out), "rules", hyp, ref, "--table", "m3:T"])
++    assert "REF-KEEPS-SRC" in out.read_text(encoding="utf-8")
++
++
++def test_never_overwrites_input(tmp_path):
++    hyp = _write(tmp_path, "hyp.txt", {1: "الف"})
++    with pytest.raises(SystemExit):
++        oa.main(["--out", hyp, "quality", hyp, hyp])
++    assert "الف" in pathlib.Path(hyp).read_text(encoding="utf-8")
++
++
++def test_map_finds_prod_and_broken_paths(tmp_path):
++    (tmp_path / "processors").mkdir()
++    (tmp_path / "processors/__init__.py").write_text("")
++    (tmp_path / "processors/ocr_x.py").write_text("import pytesseract\n")
++    (tmp_path / "main.py").write_text("from processors import ocr_x\n")
++    (tmp_path / "old.py").write_text("P = 'tests/golden/raw.txt'\nimport subprocess  # tesseract\n"
++                                     "if __name__ == '__main__':\n    pass\n")
++    out = tmp_path / "map.txt"
++    oa.main(["--root", str(tmp_path), "--out", str(out), "map", "--entry", "main"])
++    rep = out.read_text(encoding="utf-8")
++    assert "[PROD] processors/ocr_x.py" in rep
++    assert "[SCRIPT+BROKEN] old.py" in rep and "tests/golden/raw.txt" in rep
 -- 
 2.39.5
 

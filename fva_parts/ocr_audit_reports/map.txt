@@ -1,0 +1,122 @@
+ocr_audit map   root=/tmp/work/backend   entrypoints=['main', 'fva', 'fva_agents', 'pipeline', 'core.pipeline']
+
+python files scanned: 165   OCR-related: 46
+modules reachable from entrypoints: 18
+summary: ORPHAN=13, ORPHAN+BROKEN=13, TEST=7, PROD=6, SCRIPT=5, TEST+BROKEN=2
+
+status: PROD = reachable from an entrypoint; SCRIPT = runnable on its own;
+        ORPHAN = neither; BROKEN = syntax error or hard-coded paths that do not exist
+
+[PROD] core/text_cleaner.py
+    via: core.pipeline -> core.text_cleaner
+    hints: ocr   tools: -
+[PROD] fva_agents.py
+    via: fva_agents
+    hints: ocr   tools: -
+[PROD] processors/docx_extractor.py
+    via: fva -> processors.docx_extractor
+    hints: ocr   tools: -
+[PROD] processors/extractor.py
+    via: fva -> processors.docx_extractor -> processors.extractor
+    hints: ocr, pdf2image, pdfplumber, pdftotext, pytesseract, tesseract   tools: pdftotext
+[PROD] processors/ocr_normalizer.py
+    via: core.pipeline -> processors.text_analyzer -> processors.ocr_normalizer
+    hints: ocr   tools: -
+[PROD] processors/text_analyzer.py
+    via: core.pipeline -> processors.text_analyzer
+    hints: ocr   tools: -
+[ORPHAN] manual_scripts/golden/check_tiny.py
+    hints: tesseract   tools: tesseract
+[ORPHAN] manual_scripts/golden/check_tiny2.py
+    hints: tesseract   tools: tesseract
+[ORPHAN] manual_scripts/golden/llm_full_pass.py
+    hints: ocr   tools: -
+[ORPHAN] manual_scripts/golden/llm_probe.py
+    hints: ocr   tools: -
+[ORPHAN] manual_scripts/golden/llm_probe2.py
+    hints: ocr   tools: -
+[ORPHAN] manual_scripts/golden/llm_probe3.py
+    hints: ocr   tools: -
+[ORPHAN] manual_scripts/golden/llm_sample.py
+    hints: ocr   tools: -
+[ORPHAN] manual_scripts/golden/llm_sample2.py
+    hints: ocr   tools: -
+[ORPHAN] tools/audit_character_candidates.py
+    hints: ocr   tools: -
+[ORPHAN] tools/batch_audit_remaining_candidates.py
+    hints: ocr   tools: -
+[ORPHAN] tools/batch_validate_candidates.py
+    hints: ocr   tools: -
+[ORPHAN] tools/batch_validate_candidates_v3.py
+    hints: ocr   tools: -
+[ORPHAN] tools/filter_character_candidates.py
+    hints: ocr   tools: -
+[ORPHAN+BROKEN] manual_scripts/golden/benchmark_cleaner.py
+    hints: ocr   tools: -
+    missing paths: tests/golden/main_content_raw.txt
+[ORPHAN+BROKEN] manual_scripts/golden/build_ocr_candidate.py
+    hints: ocr   tools: -
+    missing paths: tests/golden/main_content_raw.txt, tests/golden/scan/
+[ORPHAN+BROKEN] manual_scripts/golden/build_ocr_v2.py
+    hints: ocr   tools: -
+    missing paths: tests/golden/main_content_raw.txt, tests/golden/scan/
+[ORPHAN+BROKEN] manual_scripts/golden/check_277.py
+    hints: ocr   tools: -
+    missing paths: tests/golden/main_content_raw.txt, tests/golden/scan/
+[ORPHAN+BROKEN] manual_scripts/golden/clean_pipeline.py
+    hints: ocr   tools: -
+    missing paths: tests/golden/ch1_p1_raw.txt, tests/golden/classify_check.py, tests/golden/main_content_raw.txt
+[ORPHAN+BROKEN] manual_scripts/golden/diag2.py
+    hints: ocr   tools: -
+    missing paths: tests/golden/main_content_raw.txt, tests/golden/scan/
+[ORPHAN+BROKEN] manual_scripts/golden/diag_ocr.py
+    hints: ocr   tools: -
+    missing paths: tests/golden/main_content_raw.txt, tests/golden/scan/
+[ORPHAN+BROKEN] manual_scripts/golden/final_pipeline.py
+    hints: ocr   tools: -
+    missing paths: tests/golden/ch1_p1_raw.txt, tests/golden/ch1_p6_raw.txt, tests/golden/classify_check.py, tests/golden/main_content_raw.txt
+[ORPHAN+BROKEN] manual_scripts/golden/match_pages.py
+    hints: ocr   tools: -
+    missing paths: tests/golden/main_content_raw.txt, tests/golden/scan/
+[ORPHAN+BROKEN] manual_scripts/golden/ocr_all.py
+    hints: ocr, tesseract   tools: tesseract
+    missing paths: pages/, tests/golden/scan/
+[ORPHAN+BROKEN] manual_scripts/golden/ocr_compare.py
+    hints: ocr, tesseract   tools: tesseract
+    missing paths: tests/golden/main_content_raw.txt, tests/golden/scan/
+[ORPHAN+BROKEN] manual_scripts/golden/ocr_probe.py
+    hints: ocr, tesseract   tools: tesseract
+    missing paths: tests/golden/main_content_raw.txt, tests/golden/scan/_tmp_x3.png, tests/golden/scan/ocr_orig.txt, tests/golden/scan/ocr_x3.txt
+[ORPHAN+BROKEN] manual_scripts/golden/reconstruct_page.py
+    hints: ocr   tools: -
+    missing paths: tests/golden/ch1_p1_raw.txt, tests/golden/classify_check.py, tests/golden/main_content_raw.txt
+[SCRIPT] ../extract-book-standalone/extract_book.py
+    hints: pdfplumber, pdftotext   tools: pdftotext
+[SCRIPT] audiobook.py
+    hints: ocr   tools: ffmpeg
+[SCRIPT] council_test.py
+    hints: ocr   tools: -
+[SCRIPT] processors/smart_text_editor.py
+    hints: ocr   tools: -
+[SCRIPT] smart_editor.py
+    hints: ocr   tools: -
+[TEST] manual_scripts/golden/test_fast_models.py
+    hints: ocr   tools: -
+[TEST] manual_scripts/golden/test_gemini_direct.py
+    hints: ocr   tools: -
+[TEST] manual_scripts/golden/test_opencode.py
+    hints: ocr   tools: -
+[TEST] manual_scripts/golden/test_stream.py
+    hints: ocr   tools: -
+[TEST] tests/test_fva_agents_fixes.py
+    hints: ocr   tools: -
+[TEST] tests/test_golden_pipeline.py
+    hints: ocr   tools: -
+[TEST] tests/test_text_cleaner_fixes.py
+    hints: ocr   tools: -
+[TEST+BROKEN] manual_scripts/golden/test_repair.py
+    hints: ocr   tools: -
+    missing paths: tests/golden/ch1_p1_raw.txt, tests/golden/ch1_p6_raw.txt, tests/golden/classify_check.py, tests/golden/main_content_raw.txt
+[TEST+BROKEN] tests/test_ocr_audit.py
+    hints: ocr, pytesseract, tesseract   tools: -
+    missing paths: processors/ocr_x.py, tests/golden/raw.txt

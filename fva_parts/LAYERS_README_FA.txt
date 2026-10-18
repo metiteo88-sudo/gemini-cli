@@ -109,3 +109,26 @@ commit 4 — processors/tts_lexicon.py فقط core.lexicon را re-export می�
   (باید خالی باشد) سپس:
   git apply --check ~/storage/downloads/fva_fixes.patch && git am ~/storage/downloads/fva_fixes.patch
   برگشت: git reset --hard HEAD~4   (فقط اگر لازم شد)
+
+-----------------------------------------------------------------
+بخش ۶ — اسکیل پیشرفتهٔ ocr-audit (قسمت نخست: اسکن -> متن خام)
+-----------------------------------------------------------------
+فایل‌ها: skills/ocr-audit/ (SKILL.md + ocr_audit.py)، گزارش‌های واقعی: ocr_audit_reports/
+patch: 0005 (داخل fva_fixes.patch هم هست؛ جدا: patches/fva_skill_ocr_audit.patch)
+چهار فرمان، همه فقط‌خواندنی، فقط stdlib (با python3 سیستم 3.11 بدون نصب آزموده شد):
+  map / quality / stage / rules — راهنما در SKILL.md
+محافظ‌ها: collide (قاعدهٔ کور متن سالم را خراب می‌کند؟)، REF-KEEPS-SRC (مرجع خودش ناپاک است)،
+  عدم بازنویسی ورودی، تا شدن ارقام لاتین/فارسی. 6 تست (54 passed در کل). کتاب کامل ~1.7 ثانیه.
+
+یافته‌ها روی داده واقعی (مرجع = FINAL، که حقیقت مطلق نیست):
+  OCR خام -> FINAL: WER ~32.8%، CER ~3.1%
+  بزرگ‌ترین خطا: چسبیدگی (6719؛ و/در/را/از)، «س» اضافهٔ tesseract (780 بار؛ ایسران، کسه)،
+    جابه‌جایی ب/ی، ت/ن، م/ص
+  text_cleaner فعلی روی متن خام: WER 32.8% -> 33.0% (۲۴۴ درست، ۲۲۱ خراب؛ بخشی از «خراب»ها در واقع
+    خطای خود FINAL است، مثل «بدرم»)
+  OCR_SPACING_RULES: 19 قاعده good~، 12 REF-KEEPS-SRC (مثلاً دراین: FINAL خودش 157 بار «دراین» دارد)، 1 unused
+  _OCR_JOINED_FIXES: 4 unused، 8 REF-KEEPS-SRC (جهیسست، وارافشی، یکود = مدخل‌های زباله)
+  نقشه: 6 فایل OCR در مسیر تولید؛ 14 اسکریپت دستی به tests/golden/ اشاره می‌کنند که جابه‌جا شده (BROKEN)
+  ناهمخوانی: golden با tesseract --psm 6 ساخته شده؛ extractor.extract_pdf_ocr (مسیر تولید) psm پیش‌فرض (3)
+مهم برای صدا: متن TTS نهایی (FINAL/main_content_tts.txt) هنوز «آشها»×18 (=آنها)، «ابران»×2 و
+  توکن‌های زباله مثل میبایسست، ررسسی، مرازایسسن دارد. به golden دست زده نشد.

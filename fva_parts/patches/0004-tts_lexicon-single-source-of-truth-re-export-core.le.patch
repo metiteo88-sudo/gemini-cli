@@ -1,7 +1,7 @@
 From 284e0ffe6fc14b94f9675ed2cf14d720c3003491 Mon Sep 17 00:00:00 2001
 From: FarsiVoiceAI <farsivoiceai@gmail.com>
 Date: Sun, 18 Oct 2026 18:38:35 +0000
-Subject: [PATCH 4/4] =?UTF-8?q?tts=5Flexicon:=20single=20source=20of=20tru?=
+Subject: [PATCH 4/5] =?UTF-8?q?tts=5Flexicon:=20single=20source=20of=20tru?=
  =?UTF-8?q?th=20=E2=80=94=20re-export=20core.lexicon.TTS=5FLEXICON=20(copi?=
  =?UTF-8?q?es=20were=20identical,=2081=20entries)?=
 MIME-Version: 1.0

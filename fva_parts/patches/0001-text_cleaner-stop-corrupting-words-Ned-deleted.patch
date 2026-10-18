@@ -1,0 +1,95 @@
+From 3c3c350265a3f9e5b32d32c001f6503aa8f63ed4 Mon Sep 17 00:00:00 2001
+From: FarsiVoiceAI <farsivoiceai@gmail.com>
+Date: Sun, 18 Oct 2026 18:35:45 +0000
+Subject: [PATCH 1/4] =?UTF-8?q?text=5Fcleaner:=20stop=20corrupting=20words?=
+ =?UTF-8?q?=20(=D9=81=D8=B1=D8=B2=D9=86=D8=AF=D9=85=E2=86=92=D9=81=D8=B1Ne?=
+ =?UTF-8?q?d=D9=85,=20=D8=AF=D8=B1=D8=A2=D9=85=D8=AF=E2=86=92=D8=AF=D8=B1?=
+ =?UTF-8?q?=20=D8=A2=D9=85=D8=AF,=20=D8=B5=D9=81=D8=AD=D9=87=20deleted,=20?=
+ =?UTF-8?q?=D8=A8=D8=AF=D8=B1=D9=85=E2=86=92=D8=A8=D8=AF=20=D8=B1=D9=85,?=
+ =?UTF-8?q?=20=D9=85=D8=A7=D8=A2=D9=85=D8=AF=D9=87=E2=86=92=D9=85=D8=A7=20?=
+ =?UTF-8?q?=D8=A2=D9=85=D8=AF)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- remove bad entry رزندم→رزNedم (hit فرزندم); remove 2 no-op entries
+- بدرم→پدرم (all 8 book cases are «پدرم»); ماآمده→ما آمده (keep final ه)
+- keep در+آ split (درآنجا, درآغاز...) but not for درآمد/درآورد/درآید family
+- join OCR-split «درآ مد» → «درآمد»
+- only delete page-marker lines «صفحه ۱۲», keep the real word «صفحه»
+Verified: full-text diff on book_final.txt (67 lines) and golden main_content_tts.txt (61 lines)
+---
+ backend/core/text_cleaner.py | 34 +++++++++++++++++++++++++---------
+ 1 file changed, 25 insertions(+), 9 deletions(-)
+
+diff --git a/backend/core/text_cleaner.py b/backend/core/text_cleaner.py
+index 9de4e5d..067c175 100644
+--- a/backend/core/text_cleaner.py
++++ b/backend/core/text_cleaner.py
+@@ -112,21 +112,38 @@ _OCR_JOINED_FIXES = (
+     ("کشیدم»آرمانی", "کشیدم. آرمانی"),
+     ("نوسازی شده،اقتصدش", "نوسازی شده، اقتصادش"),
+     ("ملتم،یا", "ملتم، یا"),
+-    ("بدرم", "بد رم"),
+-    ("نومیدگننده", "نومیدگننده"),
++    ("بدرم", "پدرم"),        # قبلاً «بد رم»؛ همهٔ موارد کتاب «پدرم» است (بدرم در سال ۱۹۱۵...)
+     ("دراختیسا", "در اختیسا"),
+-    ("رزندم", "رزNedم"),
+     ("یکود", "یک ود"),
+     ("برروی", "بر روی"),
+-    ("درآ", "در آ"),
+     ("معول", "مع و ل"),
+     ("ازمنایع", "از معادن"),
+     ("وارافشی", "وا رافشی"),
+     ("جهیسست", "ج هیست"),
+-    ("ماآمده", "ما آمد"),
+-    ("بهرحال", "بهرحال"),
++    ("ماآمده", "ما آمده"),   # قبلاً «ما آمد» (حرف «ه» حذف می‌شد)
++    # حذف شد: ("رزندم", "رزNedم") — «فرزندم» را به «فرNedم» تبدیل می‌کرد
++    # حذف شد: ("نومیدگننده", ...) و ("بهرحال", ...) — مبدأ و مقصد یکسان بود
+ )
+ 
++# «درآ مد» (OCR دو تکه) ← «درآمد»
++_DAR_A_JOIN_RE = re.compile(r"درآ (?=مد)")
++# «درآنجا»، «درآغاز»، «درآن‌زمان» ← «در آنجا» ... (مثل قبل)
++# ولی خانوادهٔ فعل «درآمدن / درآوردن» دست‌نخورده می‌ماند: درآمد، درآورد، درآید، درآیند
++_DAR_A_SPLIT_RE = re.compile(
++    r"در(?=آ)(?!آمد|آامد|آمسد|آمند|آور|آید(?![\w\u200c])|آیند(?![\w\u200c])|آیم(?![\w\u200c]))"
++)
++
++# فقط خطی که تنها «صفحه ۱۲» است شمارهٔ صفحه حساب می‌شود؛ «چهل صفحه» یا «صفحه تلویزیون» می‌ماند.
++_PAGE_LINE_RE = re.compile(r"(?m)^[ \t]*صفحه[ \t]*[0-9۰-۹]+[ \t]*$")
++
++
++def fix_ocr_joined_words(text):
++    for src, dst in _OCR_JOINED_FIXES:
++        text = text.replace(src, dst)
++    text = _DAR_A_JOIN_RE.sub("درآ", text)
++    return _DAR_A_SPLIT_RE.sub("در ", text)
++
++
+ def clean_text(text, convert_years: bool = False):
+     text = re.sub(r"[ \t]+", " ", text)
+     text = text.replace("...", "…")
+@@ -135,7 +152,7 @@ def clean_text(text, convert_years: bool = False):
+ 
+     # Remove page markers
+     text = re.sub(r"\[\[page \d+\]\]", "", text)
+-    text = text.replace("صفحه", "")
++    text = _PAGE_LINE_RE.sub("", text)
+ 
+     # Remove dashes (---)
+     text = text.replace("---", "")
+@@ -145,8 +162,7 @@ def clean_text(text, convert_years: bool = False):
+     text = text.replace("ءت", "ت")
+ 
+     # Fix known OCR joined words
+-    for src, dst in _OCR_JOINED_FIXES:
+-        text = text.replace(src, dst)
++    text = fix_ocr_joined_words(text)
+ 
+     # Convert years to words BEFORE normalizing numbers (optional, for book processing)
+     if convert_years:
+-- 
+2.39.5
+

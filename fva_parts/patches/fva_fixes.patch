@@ -1,0 +1,425 @@
+From 3c3c350265a3f9e5b32d32c001f6503aa8f63ed4 Mon Sep 17 00:00:00 2001
+From: FarsiVoiceAI <farsivoiceai@gmail.com>
+Date: Sun, 18 Oct 2026 18:35:45 +0000
+Subject: [PATCH 1/4] =?UTF-8?q?text=5Fcleaner:=20stop=20corrupting=20words?=
+ =?UTF-8?q?=20(=D9=81=D8=B1=D8=B2=D9=86=D8=AF=D9=85=E2=86=92=D9=81=D8=B1Ne?=
+ =?UTF-8?q?d=D9=85,=20=D8=AF=D8=B1=D8=A2=D9=85=D8=AF=E2=86=92=D8=AF=D8=B1?=
+ =?UTF-8?q?=20=D8=A2=D9=85=D8=AF,=20=D8=B5=D9=81=D8=AD=D9=87=20deleted,=20?=
+ =?UTF-8?q?=D8=A8=D8=AF=D8=B1=D9=85=E2=86=92=D8=A8=D8=AF=20=D8=B1=D9=85,?=
+ =?UTF-8?q?=20=D9=85=D8=A7=D8=A2=D9=85=D8=AF=D9=87=E2=86=92=D9=85=D8=A7=20?=
+ =?UTF-8?q?=D8=A2=D9=85=D8=AF)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- remove bad entry رزندم→رزNedم (hit فرزندم); remove 2 no-op entries
+- بدرم→پدرم (all 8 book cases are «پدرم»); ماآمده→ما آمده (keep final ه)
+- keep در+آ split (درآنجا, درآغاز...) but not for درآمد/درآورد/درآید family
+- join OCR-split «درآ مد» → «درآمد»
+- only delete page-marker lines «صفحه ۱۲», keep the real word «صفحه»
+Verified: full-text diff on book_final.txt (67 lines) and golden main_content_tts.txt (61 lines)
+---
+ backend/core/text_cleaner.py | 34 +++++++++++++++++++++++++---------
+ 1 file changed, 25 insertions(+), 9 deletions(-)
+
+diff --git a/backend/core/text_cleaner.py b/backend/core/text_cleaner.py
+index 9de4e5d..067c175 100644
+--- a/backend/core/text_cleaner.py
++++ b/backend/core/text_cleaner.py
+@@ -112,21 +112,38 @@ _OCR_JOINED_FIXES = (
+     ("کشیدم»آرمانی", "کشیدم. آرمانی"),
+     ("نوسازی شده،اقتصدش", "نوسازی شده، اقتصادش"),
+     ("ملتم،یا", "ملتم، یا"),
+-    ("بدرم", "بد رم"),
+-    ("نومیدگننده", "نومیدگننده"),
++    ("بدرم", "پدرم"),        # قبلاً «بد رم»؛ همهٔ موارد کتاب «پدرم» است (بدرم در سال ۱۹۱۵...)
+     ("دراختیسا", "در اختیسا"),
+-    ("رزندم", "رزNedم"),
+     ("یکود", "یک ود"),
+     ("برروی", "بر روی"),
+-    ("درآ", "در آ"),
+     ("معول", "مع و ل"),
+     ("ازمنایع", "از معادن"),
+     ("وارافشی", "وا رافشی"),
+     ("جهیسست", "ج هیست"),
+-    ("ماآمده", "ما آمد"),
+-    ("بهرحال", "بهرحال"),
++    ("ماآمده", "ما آمده"),   # قبلاً «ما آمد» (حرف «ه» حذف می‌شد)
++    # حذف شد: ("رزندم", "رزNedم") — «فرزندم» را به «فرNedم» تبدیل می‌کرد
++    # حذف شد: ("نومیدگننده", ...) و ("بهرحال", ...) — مبدأ و مقصد یکسان بود
+ )
+ 
++# «درآ مد» (OCR دو تکه) ← «درآمد»
++_DAR_A_JOIN_RE = re.compile(r"درآ (?=مد)")
++# «درآنجا»، «درآغاز»، «درآن‌زمان» ← «در آنجا» ... (مثل قبل)
++# ولی خانوادهٔ فعل «درآمدن / درآوردن» دست‌نخورده می‌ماند: درآمد، درآورد، درآید، درآیند
++_DAR_A_SPLIT_RE = re.compile(
++    r"در(?=آ)(?!آمد|آامد|آمسد|آمند|آور|آید(?![\w\u200c])|آیند(?![\w\u200c])|آیم(?![\w\u200c]))"
++)
++
++# فقط خطی که تنها «صفحه ۱۲» است شمارهٔ صفحه حساب می‌شود؛ «چهل صفحه» یا «صفحه تلویزیون» می‌ماند.
++_PAGE_LINE_RE = re.compile(r"(?m)^[ \t]*صفحه[ \t]*[0-9۰-۹]+[ \t]*$")
++
++
++def fix_ocr_joined_words(text):
++    for src, dst in _OCR_JOINED_FIXES:
++        text = text.replace(src, dst)
++    text = _DAR_A_JOIN_RE.sub("درآ", text)
++    return _DAR_A_SPLIT_RE.sub("در ", text)
++
++
+ def clean_text(text, convert_years: bool = False):
+     text = re.sub(r"[ \t]+", " ", text)
+     text = text.replace("...", "…")
+@@ -135,7 +152,7 @@ def clean_text(text, convert_years: bool = False):
+ 
+     # Remove page markers
+     text = re.sub(r"\[\[page \d+\]\]", "", text)
+-    text = text.replace("صفحه", "")
++    text = _PAGE_LINE_RE.sub("", text)
+ 
+     # Remove dashes (---)
+     text = text.replace("---", "")
+@@ -145,8 +162,7 @@ def clean_text(text, convert_years: bool = False):
+     text = text.replace("ءت", "ت")
+ 
+     # Fix known OCR joined words
+-    for src, dst in _OCR_JOINED_FIXES:
+-        text = text.replace(src, dst)
++    text = fix_ocr_joined_words(text)
+ 
+     # Convert years to words BEFORE normalizing numbers (optional, for book processing)
+     if convert_years:
+-- 
+2.39.5
+
+
+From e9a4ea216e67c59cf4011408786228c440e38207 Mon Sep 17 00:00:00 2001
+From: FarsiVoiceAI <farsivoiceai@gmail.com>
+Date: Sun, 18 Oct 2026 18:36:31 +0000
+Subject: [PATCH 2/4] =?UTF-8?q?text=5Fcleaner:=20split=20glued=20ezafe=20h?=
+ =?UTF-8?q?amza=20(=D9=88=D8=B8=DB=8C=D9=81=D9=87=D8=A1=D8=AE=D8=B7=DB=8C?=
+ =?UTF-8?q?=D8=B1=E2=86=92=D9=88=D8=B8=DB=8C=D9=81=D9=87=20=D8=AE=D8=B7?=
+ =?UTF-8?q?=DB=8C=D8=B1);=20golden=20test=20counts=20only=20real=20page-ma?=
+ =?UTF-8?q?rker=20lines;=20add=20regression=20tests?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- 13 cases in book_final.txt, 18 in golden: جبههءملی, کنگرهءآمریکا, شبکهءمشروطه...
+- test_golden_pipeline counted every «صفحه» (3 real words in golden) as a page marker
+- test_text_cleaner_fixes.py: 23 tests (17 fail on the old code)
+---
+ backend/core/text_cleaner.py             |  2 +
+ backend/tests/test_golden_pipeline.py    |  3 +-
+ backend/tests/test_text_cleaner_fixes.py | 56 ++++++++++++++++++++++++
+ 3 files changed, 60 insertions(+), 1 deletion(-)
+ create mode 100644 backend/tests/test_text_cleaner_fixes.py
+
+diff --git a/backend/core/text_cleaner.py b/backend/core/text_cleaner.py
+index 067c175..7f6f15a 100644
+--- a/backend/core/text_cleaner.py
++++ b/backend/core/text_cleaner.py
+@@ -158,6 +158,8 @@ def clean_text(text, convert_years: bool = False):
+     text = text.replace("---", "")
+ 
+     # Fix stray he-hamza and hamza-te
++    # «وظیفهءخطیر» ← «وظیفه خطیر» (هء چسبیده به کلمهٔ بعد = کسرهٔ اضافهٔ OCR)
++    text = re.sub(r"هء(?=[^\W\d_])", "ه ", text)
+     text = text.replace("هء", "ه")
+     text = text.replace("ءت", "ت")
+ 
+diff --git a/backend/tests/test_golden_pipeline.py b/backend/tests/test_golden_pipeline.py
+index c8e2ec1..58524be 100644
+--- a/backend/tests/test_golden_pipeline.py
++++ b/backend/tests/test_golden_pipeline.py
+@@ -53,7 +53,8 @@ def count_ocr_artifacts(text: str) -> dict:
+             artifacts["joined_words"] += 1
+ 
+     artifacts["page_markers"] = len(re.findall(r"\[\[page \d+\]\]", text))
+-    artifacts["page_markers"] += text.count("صفحه")
++    # فقط خطِ تنهای «صفحه ۱۲» نشانگر صفحه است؛ کلمهٔ «صفحه» در متن (چهل صفحه) شمرده نمی‌شود
++    artifacts["page_markers"] += len(re.findall(r"(?m)^[ \t]*صفحه[ \t]*[0-9۰-۹]+[ \t]*$", text))
+ 
+     artifacts["stray_diacritics"] = len(re.findall(r"[\u064b-\u0652]", text))
+ 
+diff --git a/backend/tests/test_text_cleaner_fixes.py b/backend/tests/test_text_cleaner_fixes.py
+new file mode 100644
+index 0000000..50b0fce
+--- /dev/null
++++ b/backend/tests/test_text_cleaner_fixes.py
+@@ -0,0 +1,56 @@
++"""تست رگرسیون برای باگ‌های تأییدشدهٔ text_cleaner (2026-10-18).
++هر مورد از متن واقعی book_final.txt یا golden/FINAL/main_content_tts.txt آمده است."""
++
++import pytest
++
++from core.text_cleaner import clean_text
++
++
++@pytest.mark.parametrize("src, expected", [
++    # «رزندم» ← «رزNedم» قبلاً وسط «فرزندم» اعمال می‌شد
++    ('سود "فرزندم ,هرگز', 'سود "فرزندم ,هرگز'),
++    # «بدرم» ← «پدرم» (قبلاً «بد رم»)
++    ("بدرم در سال ۱۹۱۵ آمد", "پدرم در سال ۱۹۱۵ آمد"),
++    # حرف «ه» دیگر حذف نمی‌شود
++    ("به استقبال ماآمده بودند", "به استقبال ما آمده بودند"),
++])
++def test_ocr_word_fixes(src, expected):
++    assert clean_text(src) == expected
++
++
++@pytest.mark.parametrize("word", ["درآمد", "درآمدی", "درآمدهای", "درآورد", "درآوردند", "درآید", "درآیند"])
++def test_daramadan_family_is_not_split(word):
++    assert clean_text(f"او {word} ما") == f"او {word} ما"
++
++
++@pytest.mark.parametrize("src, expected", [
++    ("درآنجا ماند", "در آنجا ماند"),
++    ("درآغاز کار", "در آغاز کار"),
++    ("درآینده", "در آینده"),
++    ("نامه\u200cبرروی میز", "نامه\u200cبر روی میز"),
++])
++def test_dar_split_still_works(src, expected):
++    assert clean_text(src) == expected
++
++
++def test_ocr_split_daramad_is_joined():
++    assert clean_text("به تصرف کشورگشایان خارجی درآ مد. اما") == "به تصرف کشورگشایان خارجی درآمد. اما"
++
++
++@pytest.mark.parametrize("text", ["بر روی صفحه ضبط شده", "در چهل صفحه تهیه کرد", "صفحه تلویزیون"])
++def test_real_word_safhe_is_kept(text):
++    assert clean_text(text) == text
++
++
++def test_page_marker_line_is_removed():
++    assert clean_text("متن اول\nصفحه ۱۲\nمتن دوم") == "متن اول\n\nمتن دوم"
++
++
++@pytest.mark.parametrize("src, expected", [
++    ("وظیفهءخطیر", "وظیفه خطیر"),
++    ("جبههءملی", "جبهه ملی"),
++    ("خانهء ما", "خانه ما"),
++    ("دوهفتهء» آمد", "دوهفته» آمد"),
++])
++def test_glued_ezafe_hamza_gets_space(src, expected):
++    assert clean_text(src) == expected
+-- 
+2.39.5
+
+
+From 91e0d7244570b9f814797569a56959feea13c081 Mon Sep 17 00:00:00 2001
+From: FarsiVoiceAI <farsivoiceai@gmail.com>
+Date: Sun, 18 Oct 2026 18:38:05 +0000
+Subject: [PATCH 3/4] fva_agents: fix HISTORICAL_NAMES import; approve
+ text_cleaner OCR fixes in scope guard; send SSML (is_ssml=True) to Edge like
+ main.py/fva.py; add tests
+
+---
+ backend/fva_agents.py                  | 12 ++++++---
+ backend/tests/test_fva_agents_fixes.py | 36 ++++++++++++++++++++++++++
+ 2 files changed, 44 insertions(+), 4 deletions(-)
+ create mode 100644 backend/tests/test_fva_agents_fixes.py
+
+diff --git a/backend/fva_agents.py b/backend/fva_agents.py
+index 2bbfb3e..3880d4e 100644
+--- a/backend/fva_agents.py
++++ b/backend/fva_agents.py
+@@ -25,12 +25,14 @@ from pathlib import Path
+ ROOT = Path(__file__).resolve().parent
+ sys.path.insert(0, str(ROOT))
+ 
+-from processors.text_analyzer import analyze_text, HISTORICAL_NAMES  # noqa: E402
++from processors.text_analyzer import analyze_text                    # noqa: E402
++from core.lexicon import HISTORICAL_NAMES                            # noqa: E402
+ from processors.ocr_normalizer import normalize_ocr_line            # noqa: E402
+-from core.text_cleaner import prepare_text, _HAMZA_FIXES            # noqa: E402
++from core.text_cleaner import prepare_text, _HAMZA_FIXES, _OCR_JOINED_FIXES  # noqa: E402
+ from processors.tts_lexicon import TTS_LEXICON                      # noqa: E402
+ from core.prosody import add_prosody                                # noqa: E402
+ from engines.edge_engine import generate_voice                      # noqa: E402
++from core.ssml_builder import build_ssml                            # noqa: E402
+ 
+ AUDIT = ROOT / "audit.jsonl"
+ TITLE_TYPES = {"book_title", "part_title", "section_title"}
+@@ -67,6 +69,7 @@ APPROVED: list[tuple[str, str]] = []
+ for _src, _dst in {**TTS_LEXICON, **HISTORICAL_NAMES}.items():
+     APPROVED.append((key(_src), key(_dst)))
+ APPROVED += [(key(a), key(b)) for a, b in _HAMZA_FIXES]
++APPROVED += [(key(a), key(b)) for a, b in _OCR_JOINED_FIXES]  # اصلاحات عمدی OCR در text_cleaner
+ APPROVED.sort(key=lambda p: len(p[0]), reverse=True)
+ 
+ 
+@@ -189,8 +192,9 @@ class EngineAgent:
+         self.out_dir.mkdir(parents=True, exist_ok=True)
+         path = self.out_dir / f"part_{idx:04d}.mp3"
+         digest = hashlib.sha256(chunk.encode("utf-8")).hexdigest()[:16]
+-        asyncio.run(generate_voice(chunk, str(path), voice=self.voice,
+-                                   rate=self.rate, pitch=self.pitch))
++        # مثل main.py و fva.py: تگ‌های <break_*> باید SSML شوند، وگرنه Edge آن‌ها را متن می‌بیند
++        asyncio.run(generate_voice(build_ssml(chunk), str(path), voice=self.voice,
++                                   rate=self.rate, pitch=self.pitch, is_ssml=True))
+         if not path.exists() or path.stat().st_size == 0:
+             audit(self.name, "violation", part=path.name)
+             raise ScopeViolation(f"{self.name}: empty audio for {path.name}")
+diff --git a/backend/tests/test_fva_agents_fixes.py b/backend/tests/test_fva_agents_fixes.py
+new file mode 100644
+index 0000000..a3f4be3
+--- /dev/null
++++ b/backend/tests/test_fva_agents_fixes.py
+@@ -0,0 +1,36 @@
++"""Regression tests for fva_agents: import, approved OCR fixes, SSML to the engine."""
++import pathlib
++import sys
++
++ROOT = pathlib.Path(__file__).resolve().parents[1]
++sys.path.insert(0, str(ROOT))
++
++import fva_agents as fa  # noqa: E402
++from engines.edge_engine import _split_ssml  # noqa: E402
++
++
++def test_import_works():
++    assert fa.HISTORICAL_NAMES and fa.APPROVED
++
++
++def test_ocr_fix_badaram_is_approved(tmp_path, monkeypatch):
++    monkeypatch.setattr(fa, "AUDIT", tmp_path / "audit.jsonl")
++    out = fa.CleanerAgent().run("بدرم به مداخلات پایان داد.")
++    assert "پدرم" in out
++
++
++def test_engine_gets_ssml_not_raw_tags(tmp_path, monkeypatch):
++    monkeypatch.setattr(fa, "AUDIT", tmp_path / "audit.jsonl")
++    sent = []
++
++    async def fake(text, out, *a, **k):
++        sent.append((text, k))
++        pathlib.Path(out).write_bytes(b"ID3")
++
++    monkeypatch.setattr(fa, "generate_voice", fake)
++    fa.EngineAgent(out_dir=tmp_path).run(1, "سلام دنیا. <break_medium> فصل اول <break_long>")
++    text, kw = sent[0]
++    assert kw.get("is_ssml") is True
++    segs = _split_ssml(text)
++    assert [v for kind, v in segs if kind == "break"] == [500, 900]
++    assert not any("break" in v for kind, v in segs if kind == "text")
+-- 
+2.39.5
+
+
+From 284e0ffe6fc14b94f9675ed2cf14d720c3003491 Mon Sep 17 00:00:00 2001
+From: FarsiVoiceAI <farsivoiceai@gmail.com>
+Date: Sun, 18 Oct 2026 18:38:35 +0000
+Subject: [PATCH 4/4] =?UTF-8?q?tts=5Flexicon:=20single=20source=20of=20tru?=
+ =?UTF-8?q?th=20=E2=80=94=20re-export=20core.lexicon.TTS=5FLEXICON=20(copi?=
+ =?UTF-8?q?es=20were=20identical,=2081=20entries)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ backend/processors/tts_lexicon.py | 90 +++----------------------------
+ 1 file changed, 6 insertions(+), 84 deletions(-)
+
+diff --git a/backend/processors/tts_lexicon.py b/backend/processors/tts_lexicon.py
+index 3cf7828..7a4991e 100644
+--- a/backend/processors/tts_lexicon.py
++++ b/backend/processors/tts_lexicon.py
+@@ -1,86 +1,8 @@
+ # واژه‌نامه تلفظ فارسی برای TTS
+-# فقط برای واژه‌هایی که تلفظشان برای موتور گفتار حساس است.
++# منبع واحد: core/lexicon.py
++# این فایل فقط برای سازگاری با importهای قدیمی است.
++# نسخهٔ تکراری قبلی دقیقاً برابر core.lexicon بود (در git محفوظ است).
+ 
+-TTS_LEXICON = {
+-    "یک": "یِک",
+-    "اضمحلال": "اِزْمِهلال",
+-    "تفضلات": "تَفَضُّلات",
+-    "رهنمون": "رَهنِمون",
+-    "بطالن": "بُطلان",
+-    "اعتلا": "اِعتِلا",
+-    "اعتلای": "اِعتِلای",
+-    "موانع": "مَوانِع",
+-    "تحریکات": "تَحریکات",
+-    "مواجه": "مُواجِه",
+-    "برحذر": "بَر حَذَر",
+-    "منازعات": "مُنازَعات",
+-    "تفاهم": "تَفاهم",
+-    "غیرمسئول": "غَیرِمَسئول",
+-    "استقرار": "اِستِقرار",
+-    "اقتدارات": "اِقتِدارات",
+-    "اختیارات": "اِختیارات",
+-    "تحقق": "تَحَقُّق",
+-    "تحکیم": "تَحکیم",
+-    "امتیازات": "اِمتیازات",
+-    "مبذول": "مَبذول",
+-    "معنوی": "مَعنَوی",
+-    "غیرمنطقی": "غَیرِمَنطِقی",
+-    "تلفیق": "تَلفیق",
+-    "تلفیقی": "تَلفیقی",
+-    "متون": "مُتون",
+-    "متمدن": "مُتَمَدِّن",
+-    "مواصلاتی": "مُواصَلاتی",
+-    "اشاعه": "اِشاعِه",
+-    "مقدور": "مَقدور",
+-    "استیلا": "اِستیلا",
+-    "احفاد": "اَحفاد",
+-    "صیانت": "صِیانت",
+-    "حیثیت": "حِیثیّت",
+-    "اصالت": "اَصالَت",
+-    "رسالت": "رِسالَت",
+-    "عنایات": "عِنایات",
+-    "سوءقصد": "سُوءقَصد",
+-    "معجزه‌آسا": "مُعجِزِه‌آسا",
+-    "اصطلاحاً": "اِصطِلاحاً",
+-    "افراطی": "اِفراطی",
+-    "متنفذان": "مُتَنَفِّذان",
+-    "استفسار": "اِستِفسار",
+-    "تفویض": "تَفویض",
+-    "ملغی": "مُلغی",
+-    "مداخلات": "مُداخَلات",
+-    "نامشروع": "نامَشروع",
+-    "ماموریت": "مَأموریت",
+-    "مصالحه": "مُصالِحِه",
+-    "مشروطیت": "مَشروطیّت",
+-    "منتهی": "مُنتَهی",
+-    "اعطای": "اِعطای",
+-    "تضعیف": "تَضعیف",
+-    "فلسفی": "فَلسَفی",
+-    "طبی": "طِبّی",
+-    "انقیاد": "اِنقِیاد",
+-    "اقتدار": "اِقتِدار",
+-    "انحصار": "اِنحِصار",
+-    "انعقاد": "اِنْعِقاد",
+-    "اعزام": "اِعزام",
+-    "انتقالات": "اِنْتِقالات",
+-    "حصول": "حُصول",
+-    "متفقین": "مُتَّفِقین",
+-    "سوقالجیشی": "سُوقُ‌الجِیشی",
+-    "مسدود": "مَسدود",
+-    "مسلط": "مُسَلَّط",
+-    "قوا": "قُوَا",
+-    "مقتضیات": "مُقتَضِیات",
+-    "ترقیخواهانه": "تَرَقّی‌خواهانه",
+-    "مرقد": "مَرْقَد",
+-    "معضل": "مُعضِل",
+-    "مستلزم": "مُستَلزِم",
+-    "مستقر": "مُستَقِر",
+-    "مشروعیت": "مَشروعیّت",
+-    "منحل": "مُنحَل",
+-    "منجر": "مُنجَر",
+-    "ملاحظات": "مُلاحَظات",
+-    "قابل‌ملاحظه": "قابِلِ مُلاحَظِه",
+-    "استثنایی": "اِستِثنایی",
+-    "اعتراض": "اِعتِراض",
+-    "انقلابی": "اِنقِلابی",
+-}
++from core.lexicon import TTS_LEXICON  # noqa: F401
++
++__all__ = ["TTS_LEXICON"]
+-- 
+2.39.5
+

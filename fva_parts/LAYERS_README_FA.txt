@@ -64,3 +64,48 @@ backend/tests/test_layers.py     14 تست
 بخش ۴ — اسرار
 -----------------------------------------------------------------
 اسکن zip: هیچ کلید API (Google, OpenRouter, Firecrawl, GitHub) و هیچ .env پیدا نشد.
+
+-----------------------------------------------------------------
+بخش ۵ — اصلاح باگ‌ها در کد واقعی (۲۰۲۶-۱۰-۱۸) — پوشه patches/
+-----------------------------------------------------------------
+پایه: کد داخل FarsiVoiceAI_code.zip (همان ~/FarsiVoiceAI گوشی).
+فایل اصلی: patches/fva_fixes.patch  (۴ commit در یک فایل؛ 0001..0004 همان‌ها جدا)
+
+commit 1 — text_cleaner: خراب‌کردن واژه‌ها متوقف شد
+  "فرزندم" دیگر "فرNedم" نمی‌شود        (golden ۲ مورد، کتاب ۱)
+  "درآ مد" -> "درآمد" (قبلاً "در آ مد")  (کتاب ۵۳ مورد)
+  خانوادهٔ درآمد/درآورد/درآید دیگر شکسته نمی‌شود؛ درآنجا/درآغاز هنوز جدا می‌شوند
+  "بدرم" -> "پدرم" (قبلاً "بد رم")       (کتاب ۸، golden ۱۱)
+  "ماآمده" -> "ما آمده" (قبلاً "ما آمد")
+  واژهٔ "صفحه" دیگر پاک نمی‌شود؛ فقط خطی که فقط "صفحه N" است حذف می‌شود
+commit 2 — "وظیفهءخطیر" -> "وظیفه خطیر" (قبلاً "وظیفهخطیر")  (کتاب ۱۳، golden ۱۸)
+  + معیار page_markers در test_golden_pipeline فقط خط‌های شماره صفحه را می‌شمارد
+commit 3 — fva_agents.py
+  ImportError رفع شد (HISTORICAL_NAMES از core.lexicon)
+  اصلاحات عمدی OCR در فهرست تأییدشدهٔ نگهبان CleanerAgent
+  باگ صدا: <break_medium> به‌صورت متن خام به Edge می‌رفت (is_ssml نبود).
+    حالا مثل main.py و fva.py: build_ssml + is_ssml=True -> مکث واقعی ۵۰۰/۹۰۰ms
+commit 4 — processors/tts_lexicon.py فقط core.lexicon را re-export می‌کند
+  (دو نسخه دقیقاً یکسان بودند، ۸۱ مدخل؛ حالا یک منبع)
+
+راستی‌آزمایی (sandbox، روی متن واقعی):
+  backend/tests: 48 passed (قبلاً 22). real_tests: 43 passed، 1 failed فقط ffprobe
+  (ffprobe در sandbox نیست؛ همان شکست قبلی).
+  diff کامل خروجی prepare_text: کتاب ۷۹ خط، golden ۷۶ خط تغییر؛ همه در دسته‌های بالا.
+  معیار golden: واژه‌های چسبیده 13->4، he_hamza 53->0، مجموع (بی اعراب) 254->7.
+  نگهبان fva_agents: توقف‌ها کتاب 14->13، golden 22->21؛ صفر توقف جدید.
+  تست‌های جدید روی کد قدیمی شکست می‌خورند (17 از 23، و ImportError) => باگ را می‌گیرند.
+  patch روی کپی تمیز پایه: git apply --check OK، git am OK، نتیجه = نسخهٔ آزموده.
+آزموده نشده: صدای واقعی Edge (اینجا مسدود است) و CANINE.
+
+عمداً تغییر نکرد (تصمیم با شما):
+  remove_extra_kasra: کسره‌های دستی را پاک می‌کند؛ اما تست موجود همین را می‌خواهد
+    ("کتابِ قدیمی" -> "کتاب قدیمی") و fva_agents آن را known issue نوشته.
+  SmartTextEditor "۲.۵" -> "۲. ۵": در مسیر اصلی استفاده نمی‌شود.
+  مدخل‌های بی‌اثر/عجیب (معول، یکود، جهیسست، وارافشی، "داریوش"->"داریوش"): در متن واقعی ۰ بار.
+
+اعمال روی گوشی (~/FarsiVoiceAI):
+  cd ~/FarsiVoiceAI && git status --short backend/core/text_cleaner.py backend/fva_agents.py backend/processors/tts_lexicon.py backend/tests/test_golden_pipeline.py
+  (باید خالی باشد) سپس:
+  git apply --check ~/storage/downloads/fva_fixes.patch && git am ~/storage/downloads/fva_fixes.patch
+  برگشت: git reset --hard HEAD~4   (فقط اگر لازم شد)

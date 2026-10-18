@@ -1,0 +1,99 @@
+From 91e0d7244570b9f814797569a56959feea13c081 Mon Sep 17 00:00:00 2001
+From: FarsiVoiceAI <farsivoiceai@gmail.com>
+Date: Sun, 18 Oct 2026 18:38:05 +0000
+Subject: [PATCH 3/4] fva_agents: fix HISTORICAL_NAMES import; approve
+ text_cleaner OCR fixes in scope guard; send SSML (is_ssml=True) to Edge like
+ main.py/fva.py; add tests
+
+---
+ backend/fva_agents.py                  | 12 ++++++---
+ backend/tests/test_fva_agents_fixes.py | 36 ++++++++++++++++++++++++++
+ 2 files changed, 44 insertions(+), 4 deletions(-)
+ create mode 100644 backend/tests/test_fva_agents_fixes.py
+
+diff --git a/backend/fva_agents.py b/backend/fva_agents.py
+index 2bbfb3e..3880d4e 100644
+--- a/backend/fva_agents.py
++++ b/backend/fva_agents.py
+@@ -25,12 +25,14 @@ from pathlib import Path
+ ROOT = Path(__file__).resolve().parent
+ sys.path.insert(0, str(ROOT))
+ 
+-from processors.text_analyzer import analyze_text, HISTORICAL_NAMES  # noqa: E402
++from processors.text_analyzer import analyze_text                    # noqa: E402
++from core.lexicon import HISTORICAL_NAMES                            # noqa: E402
+ from processors.ocr_normalizer import normalize_ocr_line            # noqa: E402
+-from core.text_cleaner import prepare_text, _HAMZA_FIXES            # noqa: E402
++from core.text_cleaner import prepare_text, _HAMZA_FIXES, _OCR_JOINED_FIXES  # noqa: E402
+ from processors.tts_lexicon import TTS_LEXICON                      # noqa: E402
+ from core.prosody import add_prosody                                # noqa: E402
+ from engines.edge_engine import generate_voice                      # noqa: E402
++from core.ssml_builder import build_ssml                            # noqa: E402
+ 
+ AUDIT = ROOT / "audit.jsonl"
+ TITLE_TYPES = {"book_title", "part_title", "section_title"}
+@@ -67,6 +69,7 @@ APPROVED: list[tuple[str, str]] = []
+ for _src, _dst in {**TTS_LEXICON, **HISTORICAL_NAMES}.items():
+     APPROVED.append((key(_src), key(_dst)))
+ APPROVED += [(key(a), key(b)) for a, b in _HAMZA_FIXES]
++APPROVED += [(key(a), key(b)) for a, b in _OCR_JOINED_FIXES]  # اصلاحات عمدی OCR در text_cleaner
+ APPROVED.sort(key=lambda p: len(p[0]), reverse=True)
+ 
+ 
+@@ -189,8 +192,9 @@ class EngineAgent:
+         self.out_dir.mkdir(parents=True, exist_ok=True)
+         path = self.out_dir / f"part_{idx:04d}.mp3"
+         digest = hashlib.sha256(chunk.encode("utf-8")).hexdigest()[:16]
+-        asyncio.run(generate_voice(chunk, str(path), voice=self.voice,
+-                                   rate=self.rate, pitch=self.pitch))
++        # مثل main.py و fva.py: تگ‌های <break_*> باید SSML شوند، وگرنه Edge آن‌ها را متن می‌بیند
++        asyncio.run(generate_voice(build_ssml(chunk), str(path), voice=self.voice,
++                                   rate=self.rate, pitch=self.pitch, is_ssml=True))
+         if not path.exists() or path.stat().st_size == 0:
+             audit(self.name, "violation", part=path.name)
+             raise ScopeViolation(f"{self.name}: empty audio for {path.name}")
+diff --git a/backend/tests/test_fva_agents_fixes.py b/backend/tests/test_fva_agents_fixes.py
+new file mode 100644
+index 0000000..a3f4be3
+--- /dev/null
++++ b/backend/tests/test_fva_agents_fixes.py
+@@ -0,0 +1,36 @@
++"""Regression tests for fva_agents: import, approved OCR fixes, SSML to the engine."""
++import pathlib
++import sys
++
++ROOT = pathlib.Path(__file__).resolve().parents[1]
++sys.path.insert(0, str(ROOT))
++
++import fva_agents as fa  # noqa: E402
++from engines.edge_engine import _split_ssml  # noqa: E402
++
++
++def test_import_works():
++    assert fa.HISTORICAL_NAMES and fa.APPROVED
++
++
++def test_ocr_fix_badaram_is_approved(tmp_path, monkeypatch):
++    monkeypatch.setattr(fa, "AUDIT", tmp_path / "audit.jsonl")
++    out = fa.CleanerAgent().run("بدرم به مداخلات پایان داد.")
++    assert "پدرم" in out
++
++
++def test_engine_gets_ssml_not_raw_tags(tmp_path, monkeypatch):
++    monkeypatch.setattr(fa, "AUDIT", tmp_path / "audit.jsonl")
++    sent = []
++
++    async def fake(text, out, *a, **k):
++        sent.append((text, k))
++        pathlib.Path(out).write_bytes(b"ID3")
++
++    monkeypatch.setattr(fa, "generate_voice", fake)
++    fa.EngineAgent(out_dir=tmp_path).run(1, "سلام دنیا. <break_medium> فصل اول <break_long>")
++    text, kw = sent[0]
++    assert kw.get("is_ssml") is True
++    segs = _split_ssml(text)
++    assert [v for kind, v in segs if kind == "break"] == [500, 900]
++    assert not any("break" in v for kind, v in segs if kind == "text")
+-- 
+2.39.5
+

@@ -1,0 +1,114 @@
+From e9a4ea216e67c59cf4011408786228c440e38207 Mon Sep 17 00:00:00 2001
+From: FarsiVoiceAI <farsivoiceai@gmail.com>
+Date: Sun, 18 Oct 2026 18:36:31 +0000
+Subject: [PATCH 2/4] =?UTF-8?q?text=5Fcleaner:=20split=20glued=20ezafe=20h?=
+ =?UTF-8?q?amza=20(=D9=88=D8=B8=DB=8C=D9=81=D9=87=D8=A1=D8=AE=D8=B7=DB=8C?=
+ =?UTF-8?q?=D8=B1=E2=86=92=D9=88=D8=B8=DB=8C=D9=81=D9=87=20=D8=AE=D8=B7?=
+ =?UTF-8?q?=DB=8C=D8=B1);=20golden=20test=20counts=20only=20real=20page-ma?=
+ =?UTF-8?q?rker=20lines;=20add=20regression=20tests?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- 13 cases in book_final.txt, 18 in golden: جبههءملی, کنگرهءآمریکا, شبکهءمشروطه...
+- test_golden_pipeline counted every «صفحه» (3 real words in golden) as a page marker
+- test_text_cleaner_fixes.py: 23 tests (17 fail on the old code)
+---
+ backend/core/text_cleaner.py             |  2 +
+ backend/tests/test_golden_pipeline.py    |  3 +-
+ backend/tests/test_text_cleaner_fixes.py | 56 ++++++++++++++++++++++++
+ 3 files changed, 60 insertions(+), 1 deletion(-)
+ create mode 100644 backend/tests/test_text_cleaner_fixes.py
+
+diff --git a/backend/core/text_cleaner.py b/backend/core/text_cleaner.py
+index 067c175..7f6f15a 100644
+--- a/backend/core/text_cleaner.py
++++ b/backend/core/text_cleaner.py
+@@ -158,6 +158,8 @@ def clean_text(text, convert_years: bool = False):
+     text = text.replace("---", "")
+ 
+     # Fix stray he-hamza and hamza-te
++    # «وظیفهءخطیر» ← «وظیفه خطیر» (هء چسبیده به کلمهٔ بعد = کسرهٔ اضافهٔ OCR)
++    text = re.sub(r"هء(?=[^\W\d_])", "ه ", text)
+     text = text.replace("هء", "ه")
+     text = text.replace("ءت", "ت")
+ 
+diff --git a/backend/tests/test_golden_pipeline.py b/backend/tests/test_golden_pipeline.py
+index c8e2ec1..58524be 100644
+--- a/backend/tests/test_golden_pipeline.py
++++ b/backend/tests/test_golden_pipeline.py
+@@ -53,7 +53,8 @@ def count_ocr_artifacts(text: str) -> dict:
+             artifacts["joined_words"] += 1
+ 
+     artifacts["page_markers"] = len(re.findall(r"\[\[page \d+\]\]", text))
+-    artifacts["page_markers"] += text.count("صفحه")
++    # فقط خطِ تنهای «صفحه ۱۲» نشانگر صفحه است؛ کلمهٔ «صفحه» در متن (چهل صفحه) شمرده نمی‌شود
++    artifacts["page_markers"] += len(re.findall(r"(?m)^[ \t]*صفحه[ \t]*[0-9۰-۹]+[ \t]*$", text))
+ 
+     artifacts["stray_diacritics"] = len(re.findall(r"[\u064b-\u0652]", text))
+ 
+diff --git a/backend/tests/test_text_cleaner_fixes.py b/backend/tests/test_text_cleaner_fixes.py
+new file mode 100644
+index 0000000..50b0fce
+--- /dev/null
++++ b/backend/tests/test_text_cleaner_fixes.py
+@@ -0,0 +1,56 @@
++"""تست رگرسیون برای باگ‌های تأییدشدهٔ text_cleaner (2026-10-18).
++هر مورد از متن واقعی book_final.txt یا golden/FINAL/main_content_tts.txt آمده است."""
++
++import pytest
++
++from core.text_cleaner import clean_text
++
++
++@pytest.mark.parametrize("src, expected", [
++    # «رزندم» ← «رزNedم» قبلاً وسط «فرزندم» اعمال می‌شد
++    ('سود "فرزندم ,هرگز', 'سود "فرزندم ,هرگز'),
++    # «بدرم» ← «پدرم» (قبلاً «بد رم»)
++    ("بدرم در سال ۱۹۱۵ آمد", "پدرم در سال ۱۹۱۵ آمد"),
++    # حرف «ه» دیگر حذف نمی‌شود
++    ("به استقبال ماآمده بودند", "به استقبال ما آمده بودند"),
++])
++def test_ocr_word_fixes(src, expected):
++    assert clean_text(src) == expected
++
++
++@pytest.mark.parametrize("word", ["درآمد", "درآمدی", "درآمدهای", "درآورد", "درآوردند", "درآید", "درآیند"])
++def test_daramadan_family_is_not_split(word):
++    assert clean_text(f"او {word} ما") == f"او {word} ما"
++
++
++@pytest.mark.parametrize("src, expected", [
++    ("درآنجا ماند", "در آنجا ماند"),
++    ("درآغاز کار", "در آغاز کار"),
++    ("درآینده", "در آینده"),
++    ("نامه\u200cبرروی میز", "نامه\u200cبر روی میز"),
++])
++def test_dar_split_still_works(src, expected):
++    assert clean_text(src) == expected
++
++
++def test_ocr_split_daramad_is_joined():
++    assert clean_text("به تصرف کشورگشایان خارجی درآ مد. اما") == "به تصرف کشورگشایان خارجی درآمد. اما"
++
++
++@pytest.mark.parametrize("text", ["بر روی صفحه ضبط شده", "در چهل صفحه تهیه کرد", "صفحه تلویزیون"])
++def test_real_word_safhe_is_kept(text):
++    assert clean_text(text) == text
++
++
++def test_page_marker_line_is_removed():
++    assert clean_text("متن اول\nصفحه ۱۲\nمتن دوم") == "متن اول\n\nمتن دوم"
++
++
++@pytest.mark.parametrize("src, expected", [
++    ("وظیفهءخطیر", "وظیفه خطیر"),
++    ("جبههءملی", "جبهه ملی"),
++    ("خانهء ما", "خانه ما"),
++    ("دوهفتهء» آمد", "دوهفته» آمد"),
++])
++def test_glued_ezafe_hamza_gets_space(src, expected):
++    assert clean_text(src) == expected
+-- 
+2.39.5
+

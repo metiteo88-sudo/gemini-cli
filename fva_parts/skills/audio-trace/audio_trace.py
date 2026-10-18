@@ -14,6 +14,10 @@
       --fake: به‌جای Edge سکوت می‌سازد (فقط برای آزمایش بدون اینترنت).
       اجرا از پوشهٔ backend.
 
+  audition WORDS.txt --out DIR [--fake]
+      چند املای یک کلمه (هر خط «املا | جمله») را شماره‌دار با صدای فرید می‌سازد تا
+      با گوش بهترین انتخاب شود؛ متن مستقیم به موتور می‌رود (بدون حذف کسره).
+
   check --ref REF_PAGED --trace DIR [--uncertain FILE] [--report OUT.txt] [--checklist OUT.txt]
       REF_PAGED: متن درست با نشانگر [[page N]] (ویرایش انسانی/مرجع).
       برای هر صفحه و هر مرحله می‌گوید کدام کلمه، عدد یا عنوان حذف/خراب شد
@@ -621,6 +625,49 @@ def cmd_check(args):
     return 1 if (args.strict and errors) else 0
 
 
+# ───────────────────────── audition (شنیدن چند املای یک کلمه) ─────────────────────────
+
+def cmd_audition(args):
+    """هر خط فایل: «املا | جملهٔ نمونه». هر گزینه با شماره خوانده می‌شود؛ متن مستقیم به
+    موتور می‌رود (بدون خط لوله، چون خط لوله کسره را حذف می‌کند) تا دقیقاً همان املا شنیده شود."""
+    backend = Path(args.backend).resolve()
+    sys.path.insert(0, str(backend))
+    os.chdir(backend)
+    import asyncio
+    import fva  # noqa: E402
+    voice = args.voice or fva.VOICE_EDGE_MALE
+    rate = args.rate or fva.DEFAULT_RATE
+    opts = []
+    for line in Path(args.words).read_text(encoding="utf-8").splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        variant, _, sentence = (x.strip() for x in line.partition("|"))
+        opts.append((variant, sentence))
+    out = Path(args.out).resolve()
+    out.mkdir(parents=True, exist_ok=True)
+    files, index = [], ["شماره\tاملا\tجمله"]
+    for n, (variant, sentence) in enumerate(opts, 1):
+        ssml = (f'<speak>گزینهٔ {fa_words(str(n))} <break time="500ms"/> {html.escape(variant)} '
+                f'<break time="700ms"/> {html.escape(sentence)} <break time="1200ms"/></speak>')
+        f = out / f"opt_{n:02d}.mp3"
+        if args.fake:
+            _silent_mp3(f, (len(variant) + len(sentence)) / FAKE_CPS + 3)
+        else:
+            from engines.edge_engine import generate_voice
+            asyncio.run(generate_voice(ssml, str(f), voice=voice, rate=rate, is_ssml=True))
+        files.append(f)
+        index.append(f"{n}\t{variant}\t{sentence}")
+        print(f"  {n:>2}. {variant}")
+    allf = out / "audition_all.mp3"
+    fva.merge_audio_files(files, allf)
+    (out / "audition_index.txt").write_text("\n".join(index) + "\n", encoding="utf-8")
+    d, _ = measure(allf, 99)
+    print(f"فایل شنیداری: {allf}  مدت {fmt_t(d)}  ({len(files)} گزینه، صدا: {voice} {rate}"
+          f"{'، ساختگی' if args.fake else ''})")
+    print(f"فهرست گزینه‌ها: {out / 'audition_index.txt'}")
+    return 0
+
+
 def _stage_fa(key):
     return dict(STAGES).get(key, key)
 
@@ -670,7 +717,15 @@ def main(argv=None):
     b.add_argument("--min-silence", type=float, default=1.5)
     b.add_argument("--strict", action="store_true", help="کد خروج ۱ اگر خرابی در متن ارسالی باشد")
     b.add_argument("--quiet", action="store_true")
+    c = sub.add_parser("audition", help="چند املای یک کلمه را شماره‌دار با صدای فرید بساز")
+    c.add_argument("words", help="فایل: هر خط «املا | جملهٔ نمونه»")
+    c.add_argument("--out", required=True)
+    c.add_argument("--voice")
+    c.add_argument("--rate")
+    c.add_argument("--fake", action="store_true")
     args = ap.parse_args(argv)
+    if args.cmd == "audition":
+        return cmd_audition(args)
     if args.cmd == "capture":
         return cmd_capture(args, extra) or 0
     return cmd_check(args)

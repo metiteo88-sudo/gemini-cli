@@ -120,3 +120,18 @@ def test_capture_real_fva_fake_audio(tmp_path):
     rc = at.main(["--backend", str(BACKEND), "check", "--ref", str(ref), "--trace", str(out),
                   "--strict", "--quiet", "--report", str(tmp_path / "r.txt")])
     assert rc == 0, (tmp_path / "r.txt").read_text(encoding="utf-8")
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg لازم است")
+def test_audition_numbers_each_spelling_exactly(tmp_path):
+    words = tmp_path / "w.txt"
+    words.write_text("# x\nبهره‌وری | افزایش بهره‌وری مهم است.\nبَهرِه‌وَری | افزایش بَهرِه‌وَری مهم است.\n",
+                     encoding="utf-8")
+    out = tmp_path / "aud"
+    r = subprocess.run([sys.executable, str(TOOL), "audition", str(words), "--out", str(out), "--fake"],
+                       cwd=BACKEND, capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr[-2000:]
+    idx = (out / "audition_index.txt").read_text(encoding="utf-8").splitlines()
+    assert idx[1].split("\t")[:2] == ["1", "بهره‌وری"]
+    assert idx[2].split("\t")[:2] == ["2", "بَهرِه‌وَری"]   # کسره حفظ شد (بدون خط لوله)
+    assert (out / "audition_all.mp3").stat().st_size > 0

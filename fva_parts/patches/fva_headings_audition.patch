@@ -1,0 +1,270 @@
+From 9d3772f86b05352f6b9e0d6cba04d34c149a6fca Mon Sep 17 00:00:00 2001
+From: FarsiVoiceAI <farsivoiceai@gmail.com>
+Date: Sun, 18 Oct 2026 20:53:27 +0000
+Subject: [PATCH 1/2] =?UTF-8?q?headings:=20speak=20chapter=20label=20and?=
+ =?UTF-8?q?=20title=20as=20separate=20segments=20=E2=80=94=20=C2=AB=D9=81?=
+ =?UTF-8?q?=D8=B5=D9=84=20=D8=AF=D9=88=D9=85=C2=BB=20[400ms]=20=C2=AB?=
+ =?UTF-8?q?=D8=A8=D9=87=D8=B1=D9=87=E2=80=8C=D9=88=D8=B1=DB=8C=C2=BB=20[90?=
+ =?UTF-8?q?0ms];=20standard=20SSML=20breaks=20so=20fva/audiobook/tts=5Ftxt?=
+ =?UTF-8?q?/Piper=20all=20handle=20them;=20tests?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ backend/audiobook.py                     | 26 ++++++++++++++++---
+ backend/fva.py                           | 26 ++++++++++++++++---
+ backend/tests/test_dirty_sample_fixes.py | 33 ++++++++++++++++++++++--
+ 3 files changed, 77 insertions(+), 8 deletions(-)
+
+diff --git a/backend/audiobook.py b/backend/audiobook.py
+index 3855758..96ce87c 100644
+--- a/backend/audiobook.py
++++ b/backend/audiobook.py
+@@ -77,10 +77,30 @@ def is_heading(item):
+     return t in HEADING_TYPES or "head" in t or "title" in t
+ 
+ 
++# سرفصل («فصل دوم») و عنوان («بهره‌وری») جدا خوانده می‌شوند: موتور Edge هر تکهٔ بین
++# دو مکث را جداگانه می‌سازد، پس هر کدام لحن خودش را می‌گیرد.
++# از تگ استاندارد SSML استفاده می‌شود (نه <break_long>) چون همهٔ مسیرها آن را می‌فهمند:
++# build_ssml، edge_engine (tts_txt بدون build_ssml) و strip_ssml برای Piper.
++HEADING_LABEL_PAUSE_MS = 400   # بین سرفصل و عنوان (کوتاه‌تر)
++HEADING_END_PAUSE_MS = 900     # بعد از کل تیتر، قبل از متن
++_HEADING_LABEL_RE = re.compile(
++    r"^((?:فصل|بخش|قسمت|دفتر|باب|گفتار|جلد)\s+[^\s:：\-–—،.]+(?:\s+و\s+[^\s:：\-–—،.]+)?)"
++    r"\s*(?:[:：\-–—.،]\s*(.*))?$"
++)
++
++
++def _brk(ms):
++    return f'<break time="{ms}ms"/>'
++
++
+ def spoken_heading(text):
+-    """تیتر را جملهٔ مستقل می‌کند تا بعدش مکث بیاید."""
+-    text = text.strip()
+-    return text if text[-1:] in ".!?؟:…؛" else text + "."
++    """تیتر ← «سرفصل [مکث کوتاه] عنوان [مکث بلند]»؛ تیتر بدون سرفصل ← «تیتر [مکث بلند]»."""
++    text = text.strip().rstrip(".!؟?:؛،")
++    m = _HEADING_LABEL_RE.match(text)
++    if m and m.group(2) and m.group(2).strip():
++        title = m.group(2).strip().rstrip(".!؟?:؛،")
++        return f"{m.group(1)} {_brk(HEADING_LABEL_PAUSE_MS)} {title} {_brk(HEADING_END_PAUSE_MS)}"
++    return f"{text} {_brk(HEADING_END_PAUSE_MS)}"
+ 
+ 
+ def split_chapters(items):
+diff --git a/backend/fva.py b/backend/fva.py
+index e568eb4..133830f 100644
+--- a/backend/fva.py
++++ b/backend/fva.py
+@@ -70,10 +70,30 @@ def is_heading(item):
+     return t in HEADING_TYPES or "head" in t or "title" in t
+ 
+ 
++# سرفصل («فصل دوم») و عنوان («بهره‌وری») جدا خوانده می‌شوند: موتور Edge هر تکهٔ بین
++# دو مکث را جداگانه می‌سازد، پس هر کدام لحن خودش را می‌گیرد.
++# از تگ استاندارد SSML استفاده می‌شود (نه <break_long>) چون همهٔ مسیرها آن را می‌فهمند:
++# build_ssml، edge_engine (tts_txt بدون build_ssml) و strip_ssml برای Piper.
++HEADING_LABEL_PAUSE_MS = 400   # بین سرفصل و عنوان (کوتاه‌تر)
++HEADING_END_PAUSE_MS = 900     # بعد از کل تیتر، قبل از متن
++_HEADING_LABEL_RE = re.compile(
++    r"^((?:فصل|بخش|قسمت|دفتر|باب|گفتار|جلد)\s+[^\s:：\-–—،.]+(?:\s+و\s+[^\s:：\-–—،.]+)?)"
++    r"\s*(?:[:：\-–—.،]\s*(.*))?$"
++)
++
++
++def _brk(ms):
++    return f'<break time="{ms}ms"/>'
++
++
+ def spoken_heading(text):
+-    """تیتر را جملهٔ مستقل می‌کند تا بعدش مکث بیاید."""
+-    text = text.strip()
+-    return text if text[-1:] in ".!?؟:…؛" else text + "."
++    """تیتر ← «سرفصل [مکث کوتاه] عنوان [مکث بلند]»؛ تیتر بدون سرفصل ← «تیتر [مکث بلند]»."""
++    text = text.strip().rstrip(".!؟?:؛،")
++    m = _HEADING_LABEL_RE.match(text)
++    if m and m.group(2) and m.group(2).strip():
++        title = m.group(2).strip().rstrip(".!؟?:؛،")
++        return f"{m.group(1)} {_brk(HEADING_LABEL_PAUSE_MS)} {title} {_brk(HEADING_END_PAUSE_MS)}"
++    return f"{text} {_brk(HEADING_END_PAUSE_MS)}"
+ 
+ 
+ def split_chapters(items):
+diff --git a/backend/tests/test_dirty_sample_fixes.py b/backend/tests/test_dirty_sample_fixes.py
+index 66f5f07..eba976e 100644
+--- a/backend/tests/test_dirty_sample_fixes.py
++++ b/backend/tests/test_dirty_sample_fixes.py
+@@ -74,12 +74,41 @@ ITEMS = [
+ def test_headings_are_spoken(module):
+     mod = pytest.importorskip(module)
+     chapters = mod.split_chapters(ITEMS)
++    S, L = '<break time="400ms"/>', '<break time="900ms"/>'
+     assert chapters == [
+-        ("پاسخ به تاریخ", ["پاسخ به تاریخ.", "دیباچه.", "قسمت اول: پاسخ به تاریخ.", "متن دیباچه."]),
+-        ("فصل چهارم", ["فصل چهارم.", "متن فصل."]),
++        ("پاسخ به تاریخ", [f"پاسخ به تاریخ {L}", f"دیباچه {L}", f"قسمت اول {S} پاسخ به تاریخ {L}", "متن دیباچه."]),
++        ("فصل چهارم", [f"فصل چهارم {L}", "متن فصل."]),
+     ]
+ 
+ 
++@pytest.mark.parametrize("module", ["fva", "audiobook"])
++@pytest.mark.parametrize("heading,expected", [
++    ("فصل دوم: بهره\u200cوری", 'فصل دوم <break time="400ms"/> بهره\u200cوری <break time="900ms"/>'),
++    ("فصل ۲ - آغاز", 'فصل ۲ <break time="400ms"/> آغاز <break time="900ms"/>'),
++    ("فصل چهارم", 'فصل چهارم <break time="900ms"/>'),
++    ("پاسخ به تاریخ.", 'پاسخ به تاریخ <break time="900ms"/>'),
++])
++def test_heading_label_and_title_get_separate_pauses(module, heading, expected):
++    mod = pytest.importorskip(module)
++    assert mod.spoken_heading(heading) == expected
++
++
++def test_heading_breaks_survive_every_path():
++    """تگ مکث تیتر در هر سه مسیر درست فهمیده می‌شود و هرگز خوانده نمی‌شود."""
++    import fva
++    from core.prosody import add_prosody
++    from core.ssml_builder import build_ssml, strip_ssml
++    from engines.edge_engine import _split_ssml
++    h = fva.spoken_heading("فصل دوم: بهره\u200cوری") + " متن."
++    for ssml in (build_ssml(add_prosody(h)), h):          # fva/audiobook ، tts_txt (بدون build_ssml)
++        seg = _split_ssml(ssml)
++        texts = [v.strip() for k, v in seg if k == "text" and v.strip()]
++        assert texts[:2] == ["فصل دوم", "بهره\u200cوری"]
++        assert [v for k, v in seg if k == "break"][:2] == [400, 900]
++        assert all("<" not in t and "break" not in t for t in texts)
++    assert "<" not in strip_ssml(add_prosody(h))         # Piper
++
++
+ @pytest.mark.parametrize("module", ["fva", "audiobook"])
+ def test_no_headings_unchanged(module):
+     mod = pytest.importorskip(module)
+-- 
+2.39.5
+
+
+From e576eb180002ba3180c874737b672330e14cbdbb Mon Sep 17 00:00:00 2001
+From: FarsiVoiceAI <farsivoiceai@gmail.com>
+Date: Sun, 18 Oct 2026 20:53:27 +0000
+Subject: [PATCH 2/2] =?UTF-8?q?audio-trace:=20add=20audition=20=E2=80=94?=
+ =?UTF-8?q?=20numbered=20spellings=20of=20a=20word=20read=20by=20Farid=20d?=
+ =?UTF-8?q?irectly=20(bypasses=20pipeline=20so=20kasra=20survives)=20to=20?=
+ =?UTF-8?q?pick=20the=20clearest=20by=20ear;=20test?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .skills/audio-trace/audio_trace.py | 55 ++++++++++++++++++++++++++++++
+ backend/tests/test_audio_trace.py  | 15 ++++++++
+ 2 files changed, 70 insertions(+)
+
+diff --git a/.skills/audio-trace/audio_trace.py b/.skills/audio-trace/audio_trace.py
+index c40321b..cdd25d9 100644
+--- a/.skills/audio-trace/audio_trace.py
++++ b/.skills/audio-trace/audio_trace.py
+@@ -14,6 +14,10 @@
+       --fake: به‌جای Edge سکوت می‌سازد (فقط برای آزمایش بدون اینترنت).
+       اجرا از پوشهٔ backend.
+ 
++  audition WORDS.txt --out DIR [--fake]
++      چند املای یک کلمه (هر خط «املا | جمله») را شماره‌دار با صدای فرید می‌سازد تا
++      با گوش بهترین انتخاب شود؛ متن مستقیم به موتور می‌رود (بدون حذف کسره).
++
+   check --ref REF_PAGED --trace DIR [--uncertain FILE] [--report OUT.txt] [--checklist OUT.txt]
+       REF_PAGED: متن درست با نشانگر [[page N]] (ویرایش انسانی/مرجع).
+       برای هر صفحه و هر مرحله می‌گوید کدام کلمه، عدد یا عنوان حذف/خراب شد
+@@ -621,6 +625,49 @@ def cmd_check(args):
+     return 1 if (args.strict and errors) else 0
+ 
+ 
++# ───────────────────────── audition (شنیدن چند املای یک کلمه) ─────────────────────────
++
++def cmd_audition(args):
++    """هر خط فایل: «املا | جملهٔ نمونه». هر گزینه با شماره خوانده می‌شود؛ متن مستقیم به
++    موتور می‌رود (بدون خط لوله، چون خط لوله کسره را حذف می‌کند) تا دقیقاً همان املا شنیده شود."""
++    backend = Path(args.backend).resolve()
++    sys.path.insert(0, str(backend))
++    os.chdir(backend)
++    import asyncio
++    import fva  # noqa: E402
++    voice = args.voice or fva.VOICE_EDGE_MALE
++    rate = args.rate or fva.DEFAULT_RATE
++    opts = []
++    for line in Path(args.words).read_text(encoding="utf-8").splitlines():
++        if not line.strip() or line.lstrip().startswith("#"):
++            continue
++        variant, _, sentence = (x.strip() for x in line.partition("|"))
++        opts.append((variant, sentence))
++    out = Path(args.out).resolve()
++    out.mkdir(parents=True, exist_ok=True)
++    files, index = [], ["شماره\tاملا\tجمله"]
++    for n, (variant, sentence) in enumerate(opts, 1):
++        ssml = (f'<speak>گزینهٔ {fa_words(str(n))} <break time="500ms"/> {html.escape(variant)} '
++                f'<break time="700ms"/> {html.escape(sentence)} <break time="1200ms"/></speak>')
++        f = out / f"opt_{n:02d}.mp3"
++        if args.fake:
++            _silent_mp3(f, (len(variant) + len(sentence)) / FAKE_CPS + 3)
++        else:
++            from engines.edge_engine import generate_voice
++            asyncio.run(generate_voice(ssml, str(f), voice=voice, rate=rate, is_ssml=True))
++        files.append(f)
++        index.append(f"{n}\t{variant}\t{sentence}")
++        print(f"  {n:>2}. {variant}")
++    allf = out / "audition_all.mp3"
++    fva.merge_audio_files(files, allf)
++    (out / "audition_index.txt").write_text("\n".join(index) + "\n", encoding="utf-8")
++    d, _ = measure(allf, 99)
++    print(f"فایل شنیداری: {allf}  مدت {fmt_t(d)}  ({len(files)} گزینه، صدا: {voice} {rate}"
++          f"{'، ساختگی' if args.fake else ''})")
++    print(f"فهرست گزینه‌ها: {out / 'audition_index.txt'}")
++    return 0
++
++
+ def _stage_fa(key):
+     return dict(STAGES).get(key, key)
+ 
+@@ -670,7 +717,15 @@ def main(argv=None):
+     b.add_argument("--min-silence", type=float, default=1.5)
+     b.add_argument("--strict", action="store_true", help="کد خروج ۱ اگر خرابی در متن ارسالی باشد")
+     b.add_argument("--quiet", action="store_true")
++    c = sub.add_parser("audition", help="چند املای یک کلمه را شماره‌دار با صدای فرید بساز")
++    c.add_argument("words", help="فایل: هر خط «املا | جملهٔ نمونه»")
++    c.add_argument("--out", required=True)
++    c.add_argument("--voice")
++    c.add_argument("--rate")
++    c.add_argument("--fake", action="store_true")
+     args = ap.parse_args(argv)
++    if args.cmd == "audition":
++        return cmd_audition(args)
+     if args.cmd == "capture":
+         return cmd_capture(args, extra) or 0
+     return cmd_check(args)
+diff --git a/backend/tests/test_audio_trace.py b/backend/tests/test_audio_trace.py
+index edd13d8..b7d2c75 100644
+--- a/backend/tests/test_audio_trace.py
++++ b/backend/tests/test_audio_trace.py
+@@ -120,3 +120,18 @@ def test_capture_real_fva_fake_audio(tmp_path):
+     rc = at.main(["--backend", str(BACKEND), "check", "--ref", str(ref), "--trace", str(out),
+                   "--strict", "--quiet", "--report", str(tmp_path / "r.txt")])
+     assert rc == 0, (tmp_path / "r.txt").read_text(encoding="utf-8")
++
++
++@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg لازم است")
++def test_audition_numbers_each_spelling_exactly(tmp_path):
++    words = tmp_path / "w.txt"
++    words.write_text("# x\nبهره‌وری | افزایش بهره‌وری مهم است.\nبَهرِه‌وَری | افزایش بَهرِه‌وَری مهم است.\n",
++                     encoding="utf-8")
++    out = tmp_path / "aud"
++    r = subprocess.run([sys.executable, str(TOOL), "audition", str(words), "--out", str(out), "--fake"],
++                       cwd=BACKEND, capture_output=True, text=True)
++    assert r.returncode == 0, r.stderr[-2000:]
++    idx = (out / "audition_index.txt").read_text(encoding="utf-8").splitlines()
++    assert idx[1].split("\t")[:2] == ["1", "بهره‌وری"]
++    assert idx[2].split("\t")[:2] == ["2", "بَهرِه‌وَری"]   # کسره حفظ شد (بدون خط لوله)
++    assert (out / "audition_all.mp3").stat().st_size > 0
+-- 
+2.39.5
+
